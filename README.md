@@ -25,7 +25,7 @@ Every model folder has the same shape:
 1. **WSL2, with a Linux distro in it.** If you don't have it: in a Windows terminal, `wsl --install`, then reboot. The scripts look for a distro named `Ubuntu`; if yours has another name (e.g. `Ubuntu-24.04`), set the env var `WSL_DISTRO` to that exact name (see Config). Docker and the nvidia container runtime go inside the distro — the installer does that part, not you.
 2. **The NVIDIA driver** WSL2 drives the GPUs straight through it; nothing gets installed inside the distro for the GPUs. From a Windows terminal, `nvidia-smi` should list both of your cards.
 3. **Git for Windows** — only to `git clone` this repo (the install itself never calls git; the distro brings its own). If you don't have it: [git-scm.com/download/win](https://git-scm.com/download/win).
-4. **Python on Windows** — only for the benchmark bats (`bench.bat` etc.; the route gate is stdlib python, no packages). Booting and serving never need it. If you don't have it: [python.org/downloads](https://www.python.org/downloads/) — install with "Add python.exe to PATH" ticked. Docker and the tiers supply their own python inside the image.
+4. **Python on Windows** — only for the benchmark bats (`bench.bat` etc.; the route gate is stdlib python, no packages). Booting and serving never need it. **Any Python 3.9 or newer** works; if you don't have it: [python.org/downloads](https://www.python.org/downloads/) — install with "Add python.exe to PATH" ticked. Docker and the tiers supply their own python inside the image.
 
 The rest is setup, not install:
 
