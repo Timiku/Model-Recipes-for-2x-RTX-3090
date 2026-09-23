@@ -28,6 +28,7 @@ layer forwards in a step.
 from __future__ import annotations
 
 import os
+import time
 
 import torch
 
@@ -723,6 +724,12 @@ def kvarn_decode_attention(
     out_dtype = query.dtype
     group = cfg.group
     N = B * Hq  # rows for the 2D Q rotation matmul
+    # #8b-diag: KVARN_BT_TIMING=1 stage prints (sync-bounded, eager-only;
+    # do NOT enable during graph-captured serving).
+    _tim = os.environ.get("KVARN_BT_TIMING") == "1"
+    if _tim:
+        torch.cuda.synchronize()
+        _t0 = time.perf_counter()
 
     # 1. Q rotation — single fp16 tensor-core matmul into the persistent buffer.
     #    Use the SAME fp16 Hadamard the K/V store used (_H_fp16) so QKᵀ stays
@@ -808,6 +815,11 @@ def kvarn_decode_attention(
                 Hq * D, D, **common,                       # autotune fills BLOCK_N + warps + stages
             )
         output_rot = fused_out
+        if _tim:
+            torch.cuda.synchronize()
+            _t1 = time.perf_counter()
+            print(f"[KVARN_DT] B={B} seq~{max_blocks_per_req * group} "
+                  f"single-stage={(_t1 - _t0) * 1e3:.1f}ms", flush=True)
     elif split_k:
         SPLITS = adaptive_num_kv_splits(max_blocks_per_req)
         mid_o = impl._mid_o_buf
@@ -824,6 +836,9 @@ def kvarn_decode_attention(
                 mid_o.stride(0), mid_o.stride(1), mid_lse.stride(0),
                 NUM_KV_SPLITS=SPLITS, HQ=Hq, **common,  # BLOCK_N/warps autotuned
             )
+        if _tim:
+            torch.cuda.synchronize()
+            _t1 = time.perf_counter()
         with torch.profiler.record_function("kvarn_fused_decode_s2"):
             _kvarn_fused_decode_stage2[(N,)](
                 mid_o, mid_lse, fused_out,
@@ -831,6 +846,12 @@ def kvarn_decode_attention(
                 D=D, NUM_KV_SPLITS=SPLITS, num_warps=2,
             )
         output_rot = fused_out
+        if _tim:
+            torch.cuda.synchronize()
+            _t2 = time.perf_counter()
+            print(f"[KVARN_DT] B={B} seq~{max_blocks_per_req * group} "
+                  f"s1={(_t1 - _t0) * 1e3:.1f}ms s2+rot={(_t2 - _t1) * 1e3:.1f}ms",
+                  flush=True)
     else:
         K_packed = impl._fa_K_buf
         V_packed = impl._fa_V_buf

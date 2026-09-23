@@ -64,23 +64,34 @@ FORBIDDEN = [
 # pin as a map key, so the patterns are the map/stock forms, not the old
 # env-list `=` forms (the 0.28.0 gate checked `VLLM_IMAGE`/`=0,2`).
 REQUIRED = [
-    # the stock-image anchor OR a modified-image recipe's local tag (the
-    # ${VLLM_IMAGE:-...} default form; flash-next's locked overlay builds one)
-    (r"image: (vllm/vllm-openai:|\$\{VLLM_IMAGE:-)", "the image pin"),
+    (r"image: vllm/vllm-openai:", "the image pin (literal, the 0.29.0 anchor)"),
     (r"WEIGHTS_DIR", "weights dir knob"),
     (r"TARGET_MODEL", "checkpoint selection knob"),
+    (r"CHAT_TEMPLATE", "chat template knob"),
+    (r"--chat-template", "chat template flag"),
+    (r"/templates/", "templates mount"),
     (r"CUDA_VISIBLE_DEVICES", "the device pin"),
     (r"PCI_BUS_ID", "the PCI_BUS_ID order"),
     (r"expandable_segments:False", "the alloc-conf invariant"),
     (r"VLLM_WSL2_ENABLE_PIN_MEMORY", "the WSL2 pin-memory invariant"),
 ]
-# The chat-template set only applies where the model carries the machinery.
-# Flash-next's wrapper owns the template + parsers (its yml header says so),
-# so those three patterns are conditional there.
-TEMPLATE_REQUIRED = [
-    (r"CHAT_TEMPLATE", "chat template knob"),
-    (r"--chat-template", "chat template flag"),
-    (r"/templates/", "templates mount"),
+
+# The modified-image class (a yml carrying the marker below) does not run a
+# stock vllm/vllm-openai image: it runs a locally built image FROM a
+# digest-pinned vendor base (the community 2x3090 stack case). Such a tier
+# cannot carry the stock-image literal, and its wrapper owns the parsers -
+# so the chat-template requirements do not apply. Everything else still does.
+MODIFIED_IMAGE_MARKER = "provenance-class: modified-image"
+MODIFIED_IMAGE_DROP = {
+    "the image pin (literal, the 0.29.0 anchor)",
+    "chat template knob",
+    "chat template flag",
+    "templates mount",
+}
+MODIFIED_IMAGE_EXTRA = [
+    (r"image: \$\{VLLM_IMAGE:-[A-Za-z0-9._/-]+:locked\}",
+     "the locked image pin (the modified-image class)"),
+    (r"sha256:[0-9a-f]{40,64}", "the vendor base digest pin"),
 ]
 
 
@@ -202,7 +213,6 @@ def cmd_check(a):
     for k, p, n in counts:
         print(f"  {k} x{n}: {p.pattern}")
 
-
 def cmd_lint(a):
     lines = read_lines(a.yml)
     try:
@@ -223,14 +233,10 @@ def cmd_lint(a):
             if re.search(pat, line):
                 bad.append(f"  line {i} ({why}): {line}")
     text = "\n".join(lines)
-    required = list(REQUIRED)
-    # models whose wrapper owns the chat machinery (stated in the yml header)
-    # legitimately carry no template knob/mount - the template checks would
-    # never pass for them, so they are skipped when the header says so.
-    header = lines[:idx] if idx >= 0 else lines
-    if not any("no chat-template knob" in l for l in header):
-        required += TEMPLATE_REQUIRED
-    for pat, what in required:
+    modified = MODIFIED_IMAGE_MARKER in text
+    req = ([r for r in REQUIRED if r[1] not in MODIFIED_IMAGE_DROP]
+           + MODIFIED_IMAGE_EXTRA) if modified else REQUIRED
+    for pat, what in req:
         if not re.search(pat, text, re.M):
             bad.append(f"  missing: {what} ({pat})")
     for i in range(len(body) - 1):
