@@ -1931,6 +1931,29 @@ class KVarNAttentionImpl(AttentionImpl["KVarNMetadata"]):
             V_PACKED_OFFSET=cfg.v_packed_offset, V_S_COL_OFFSET=cfg.v_s_col_offset,
             V_S_ROW_OFFSET=cfg.v_s_row_offset, V_ZP_OFFSET=cfg.v_zp_offset,
         )
+        # 4b. The LQ=1 specialization (#8e direct decode): the per-request
+        # launch passes LQ=1, which lands in Triton's `== 1`
+        # int-specialization bucket — a DIFFERENT compiled variant than the
+        # LQ=B call above. Without this warm launch, the first captured
+        # decode step with KVARN_DIRECT_DECODE=1 would JIT mid-capture and
+        # die with cudaErrorStreamCaptureInvalidated.
+        _kvarn_prefill_direct_kernel[(1, Hk)](
+            q[0:1], bt[0:1], sl[0:1], b2s, cache, pool_k, pool_v,
+            out[0:1], self.scale, 1,
+            q.stride(0), q.stride(1), bt.stride(0),
+            cache.stride(0), cache.stride(1),
+            pool_k.stride(0), pool_k.stride(1), pool_k.stride(2),
+            out.stride(0), out.stride(1),
+            HQ=Hq, HK=Hk, D=D, GROUP=G,
+            BLOCK_M=DIRECT_BM, BLOCK_N=DIRECT_BN,
+            num_warps=DIRECT_WARPS, num_stages=DIRECT_STAGES,
+            K_BITS=cfg.key_bits, V_BITS=cfg.value_bits,
+            NUM_BLOCKS_LOOKUP=int(self._block_lookup_size),
+            K_PACKED_OFFSET=cfg.k_packed_offset, K_S_COL_OFFSET=cfg.k_s_col_offset,
+            K_ZP_OFFSET=cfg.k_zp_offset, K_S_ROW_OFFSET=cfg.k_s_row_offset,
+            V_PACKED_OFFSET=cfg.v_packed_offset, V_S_COL_OFFSET=cfg.v_s_col_offset,
+            V_S_ROW_OFFSET=cfg.v_s_row_offset, V_ZP_OFFSET=cfg.v_zp_offset,
+        )
         torch.cuda.synchronize(device)
 
     def _batch_slot_mapping_cpu(self) -> list[int] | None:
@@ -2605,6 +2628,18 @@ class KVarNAttentionImpl(AttentionImpl["KVarNMetadata"]):
 
         # q shape: [num_decode_tokens, num_heads, head_dim]
         # num_decode_tokens == B (one token per request)
+        # #8e: KVARN_DIRECT_DECODE=1 routes plain single-token decode
+        # through the packed-direct kernel (#8d) instead of the split-K
+        # fused kernel — one launch per layer per request, no fp16 K/V,
+        # no split-K staging buffers. OFF by default: the decode turn
+        # (09-21) measured the production wall in THIS path's surroundings
+        # as much as in the kernels, and the flag exists so one boot can
+        # A/B the two routes under identical state. The per-request
+        # launches read seq_lens and the block table ON DEVICE (slices,
+        # no .tolist()) — capturable; the warm block compiles the LQ=1
+        # specialization so capture never JITs.
+        if os.environ.get("KVARN_DIRECT_DECODE") == "1":
+            return self._decode_path_direct(q, kv_cache, attn_metadata)
         return kvarn_decode_attention(
             query=q,
             kv_cache=kv_cache,
@@ -2614,6 +2649,50 @@ class KVarNAttentionImpl(AttentionImpl["KVarNMetadata"]):
             impl=self,
             md=attn_metadata,
         )
+
+    def _decode_path_direct(
+        self, q: torch.Tensor, kv_cache: torch.Tensor,
+        attn_metadata: KVarNMetadata,
+    ) -> torch.Tensor:
+        """#8e: batched single-query decode through the packed-direct
+        kernel (#8d), which is single-request (one seq_len, one block
+        table row per launch). B launches per layer — B is 2 on this
+        tier's max-num-seqs — each reading its request's seq_len and
+        block row from DEVICE slices, so the whole step is
+        capture-safe (no host sync, no data-dependent host branch).
+        Padded slots carry seq_len 0: the kernel's block loop skips
+        them (n_blocks 0) and their output rows are ignored by the
+        scheduler. The Q rotation/un-rotation is one mm each for the
+        whole batch; the per-launch overhead is the price for keeping
+        the kernel's single-request contract untouched.
+        """
+        from vllm.v1.attention.ops.triton_kvarn_prefill_direct import (
+            launch_prefill_direct,
+        )
+        B = q.shape[0]
+        D = self.head_size
+        cfg = self.kvarn_config
+        H16 = (self._H_fp16 if self._H_fp16 is not None
+               else self._hadamard(q.device).to(torch.float16))
+        q_rot = torch.mm(q.reshape(-1, D), H16).view(
+            B, self.num_heads, D)
+        o_rot = torch.empty(B, self.num_heads, D,
+                            dtype=torch.float16, device=q.device)
+        sl = attn_metadata.seq_lens.to(torch.int32)
+        bt = attn_metadata.block_table
+        for r in range(B):
+            launch_prefill_direct(
+                q_rot[r:r + 1], bt[r:r + 1], sl[r:r + 1],
+                self._block_to_slot_t, kv_cache,
+                self._tail_K_pool, self._tail_V_pool,
+                o_rot[r:r + 1], self.scale, 1,
+                num_heads=self.num_heads,
+                num_kv_heads=self.num_kv_heads,
+                cfg=cfg, block_lookup_size=self._block_lookup_size,
+            )
+        o_true = torch.mm(o_rot.reshape(-1, D), H16).view(
+            B, self.num_heads, D)
+        return o_true.to(q.dtype)
 
     def _decode_path_slow(
         self, q: torch.Tensor, kv_cache: torch.Tensor,
@@ -2632,7 +2711,12 @@ class KVarNAttentionImpl(AttentionImpl["KVarNMetadata"]):
         case instead; unreachable under the builder's invariant.
         """
         num_reqs = attn_metadata.block_table.shape[0]
-        seq_lens = attn_metadata.seq_lens.tolist()
+        # #8f: same as the grouped path — consume the builder's precomputed
+        # CPU list; no per-layer D2H sync (the 09-21 nsys capture pinned the
+        # copy stalls on exactly this class of call).
+        _slc = attn_metadata.seq_lens_cpu
+        seq_lens = (_slc[:num_reqs] if _slc is not None
+                    else attn_metadata.seq_lens.tolist())
         qsl = attn_metadata.query_start_loc.tolist()
         # #8b-diag: stage timings when KVARN_BT_TIMING=1 (one line per
         # layer per step: gather kernel vs attention, sync-bounded so the
@@ -2918,11 +3002,19 @@ class KVarNAttentionImpl(AttentionImpl["KVarNMetadata"]):
         # 263,873 > 262,144 and the slow path's fp32 materialize asked for
         # 2.98 GiB beside a full cache — an OOM on BOTH ranks, twice, and a
         # sticky illegal access in earlier runs. See `_scratch_groups`.
-        # The host copy of seq_lens replaces the old `int(cu_k[-1].item())`:
-        # the partition needs it anyway, so the path keeps its ONE D2H sync
-        # rather than adding a second (a sync here also moves where an async
-        # fault surfaces, which is not a change worth making for free).
-        seq_lens_list = seq_lens.tolist()
+        # #8f: the partition consumes the BUILDER's precomputed CPU list
+        # (one D2H per batch, line ~652) instead of a per-layer `.tolist()`.
+        # The old form synced the rank against its own queue EVERY layer —
+        # the 09-21 nsys capture measured the copy channel stalling
+        # 0.4-0.7 s per call whenever the queue was deep (522 such stalls in
+        # one 100k needle window; 74 % of the window's API time was
+        # cudaMemcpyAsync), and the #8b-diag sync-bounded stage timers
+        # absorbed exactly these stalls into what read as "stage1" — the
+        # kernel was never 50x; the copies interleaved with it are. The
+        # device-side cumsum below stays (it feeds the kernel, no sync).
+        _slc = md.seq_lens_cpu
+        seq_lens_list = (_slc[:B] if _slc is not None
+                         else seq_lens.tolist())
         total_k = sum(seq_lens_list)
         if total_k <= 0:
             return self._decode_path_slow(q, kv_cache, md)
