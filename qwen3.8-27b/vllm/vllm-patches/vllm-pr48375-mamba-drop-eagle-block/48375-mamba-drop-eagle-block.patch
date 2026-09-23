@@ -1,0 +1,40 @@
+# vLLM #48375 — honor drop_eagle_block in MambaManager.
+#
+# Re-anchored from the upstream PR (vllm-project/vllm#48375, @potto007,
+# "Honor drop_eagle_block in MambaManager") to the v0.29.0 tree, using the
+# max_length form that @Karl0007 reported running in production (see README).
+#
+# Bug: MambaManager.find_longest_cache_hit takes drop_eagle_block in its
+# signature but never reads it, so a MTP/EAGLE prefix-cache resume returns the
+# last matched block even though its mamba recurrent-state snapshot was taken
+# over draft tokens that verification may later reject. That is the second half
+# of the #53142 + #48375 pair that fixes the precopy_mamba_align_fused_kernel
+# illegal memory access on a shared-prefix resume (vllm#54173).
+#
+# Form: lower max_length by one mamba block. NOT a literal pop — the mamba hit
+# is null-padded with the single real state block at the END, so a pop would
+# drop the only real state and leave an all-null hit. Clamping max_length is
+# arithmetically identical for the coarse right-to-left loop
+# ((x-b)//b == x//b - 1) AND also bounds the fine-grained partial-unit search
+# (max_num_partial_units = max_length // hash_block_size), which a naive
+# "max_num_blocks -= 1" does not reach in this tree.
+#
+# Authored against vllm/vllm-openai:v0.29.0. Apply from the installed vllm dir:
+#   patch -p1 -d <.../vllm> < 48375-mamba-drop-eagle-block.patch
+
+--- a/v1/core/single_type_kv_cache_manager.py
++++ b/v1/core/single_type_kv_cache_manager.py
+@@ -1405,8 +1405,13 @@
+         assert isinstance(kv_cache_spec, MambaSpec), (
+             "MambaManager can only be used for mamba groups"
+         )
+         assert dcp_world_size == 1, "DCP not support mamba now."
+         assert pcp_world_size == 1, "PCP not support mamba now."
++        # vllm#48375: a MTP/EAGLE resume must not resume from the final matched
++        # block (its mamba recurrent state was captured over draft tokens that
++        # verification may reject); lower the search ceiling by one mamba block.
++        if drop_eagle_block:
++            max_length = max(0, max_length - kv_cache_spec.block_size)
+         block_hashes = resolve_block_hashes(
+             block_hashes,
+             block_pool.hash_block_size,

@@ -1,0 +1,476 @@
+# ===========================================================================
+# MODEL-RECIPES :: qwen3.8-27b / vllm / package :: mtp.yml
+#
+# The 0.29.0 package template (the rebase). Stock vllm/vllm-openai:v0.29.0
+# + a small, re-evaluated patch set — never a fork (see the doctrine). This
+# file is the PACKAGE default: the full intended config for this tier. A box's
+# machine .env (mtp.env, beside its start bat) feeds these keys; at boot the start script passes it to compose
+#   docker compose --env-file mtp.env -f package/mtp.yml
+# (a key set in the .env wins; the package default stands otherwise).
+#
+# Provenance (this file)
+#   rebased      2026-09-12, Phase 1 of the vLLM 0.29.0 rebase. Stock
+#                v0.28.0 base -> v0.29.0; the 27b's nine patch bundles
+#                re-evaluated against the 0.29.0 source.
+#   base         vllm/vllm-openai:v0.29.0 (Model-Runner-V2 line). The base is
+#                the ONLY thing this file pins; a version bump edits this line
+#                in place.
+#   parent       the pre-rebase package yml (club3090/mtp.yml; v0.28.0, the
+#                in-place 28.0 MTP tier) — this file is that body with the
+#                0.29.0 deltas below.
+#
+# Deltas (this body vs stock baseline/mtp.yml; enforced by
+#   _shared/scripts/yml-provenance.py check, manifest: deltas/mtp.txt)
+#   1. image:      stock v0.29.0 (the rebase's base pin).
+#   2. volumes:    - vllm-pr48375-mamba-drop-eagle-block (vllm#48375) —
+#                  DROPPED: 0.29.0 threads drop_eagle_block through every KV
+#                  manager incl. MambaManager, so the fix is stock.
+#   3. volumes:    the kept bundles re-anchored to 0.29.0 where their target
+#                  moved: gdn-async-order, syv-mamba-ckpts, mamba-align-seed
+#                  (each install.sh is boot-refusing). syv-xgrammar is DROPPED —
+#                  0.29.0 carries its accept_tokens fix verbatim (redundant).
+#                  w4a8 + flashinfer-decode-pin re-apply unchanged.
+      #                  mamba-copy-bounds (#50021 Site 2, the align pre-copy) + 50021-spec-decode-bounds (#50021 Site 1, the accepted-count state lookups) are both mounted and MTP-scoped; the pair closes the accepted-count state-lookup IMA.
+#   4. environment: the machine-tunable knobs are literal package defaults here;
+#                  the machine .env overrides them (DEVICE_PAIR, BIND_HOST/PORT,
+#                  WEIGHTS_DIR, TARGET_MODEL, the mtp ctx/concurrency/prefix-cache
+#                  shape, the sampler row).
+#   5a. (machine, 09-14) MAX_NUM_SEQS 2->4 in mtp.env: the post-undervolt
+#                  concurrency re-eval (N=2/4/8 clean at ~8k ctx, 24.8/43.5/74.5
+#                  tok/s aggregate) retires the "2, NOT 8" crash-era stance; 4 is
+#                  the latency knee. The package default stays 2 (conservative).
+#                  MTP drafter, the invariants) is byte-identical to the
+#                  pre-rebase body except where a dropped/re-anchored bundle touches it.
+#                  5a. (withdrawn 09-14) a CUDAGRAPH_CONFIG knob was probed for
+#                  the PIECEWISE mitigation; refuted (the fault was the box's
+#                  3090 undervolt, seen on an early boot) and removed.
+#   6. (09-14, community sweep) four syv-ai/club-3090 tweaks, boot-gated:
+#      spec-config gains "draft_sample_method":"probabilistic" (syv: the
+#      default is greedy and the rejection test loses its denominator;
+#      ~20% acceptance, 2.66->3.23 tok/step); --mamba-block-size 8192
+#      (club-3090: ~5x fewer SSM state pages, 2x200K concurrent 0 preempts,
+#      quality-neutral); --compilation-config with the fused
+#      rms_norm/silu_and_mul custom ops + a 64-token graph cap; and the
+#      served CHAT_TEMPLATE defaults to the vendored froggeric-v22.5.jinja
+#      (fixed Qwen3.8 template; also maps client reasoning_effort high->xhigh,
+#      closing the stock-template raise on `high`). Vision tower STAYS LOADED
+#      (user hard rule); --language-model-only deliberately not shipped.
+#      Moot-on-0.29.0, not shipped: --mamba-ssm-cache-dtype (auto already
+#      infers bf16) and align on the dflash2 tier (club-3090 measured null).
+#
+# Invariants (carried from the pre-rebase body): restart "no"; the
+#   CUDA_VISIBLE_DEVICES=${DEVICE_PAIR} + PCI_BUS_ID pin; expandable_segments:False;
+#   VLLM_WSL2_ENABLE_PIN_MEMORY; the W4A8 gate ordering; the six install.sh calls;
+#   the built-in MTP drafter (n=4, this tier carries no DRAFTER knob); the
+#   thinking-preset sampler logic; 262144 ctx; 0.90 util; fp8 KV; mamba
+#   align + --prefix-match-unit 16; the qwen3 / qwen3_coder parsers; the
+#   template kwargs; MAX_NUM_SEQS 2.
+#
+# Re-assert (the gate that keeps this file honest):
+#   python3 _shared/scripts/yml-provenance.py check \
+#     --yml qwen3.8-27b/vllm/package/mtp.yml \
+#     --source qwen3.8-27b/vllm/baseline/mtp.yml \
+#     --manifest qwen3.8-27b/vllm/deltas/mtp.txt
+#   python3 _shared/scripts/yml-provenance.py lint --yml <this file>
+#
+# ===[model-recipes:provenance:end]===
+# ===========================================================================
+# Profile (at-a-glance):
+#   Model:     Qwen3.8-27B (Frozenlock AutoRound INT4 — 4-bit, group 128, sym,
+#              packing auto_round:auto_gptq; ~18 GiB. Vision tower is bf16;
+#              the MTP head is QUANTIZED. ⭐ Replaced the Avuja export
+#              2026-08-20 (club-3090#1052) — Avuja's built-in MTP drafter
+#              collapsed to 0% acceptance at ~14.5k gen; Frozenlock runs
+#              clean past 22-24k (verify-full 8/9, bench narr ~75 / code
+#              ~103 ≈ Avuja, MTP accept-len 3.48-5.0). Avuja preserved on
+#              disk as qwen3.8-27b-autoround-int4-avuja.) Served **W4A8** — int8
+#              activations ON by default (W4A8=0 for W4A16).
+#   Topology:  Dual 3090 PCIe (TP=2, no NVLink; NVLINK_MODE=auto detects)
+#   Drafter:   MTP n=4 built-in (SPEC_N override; SPEC_N=0 disables)
+#              Toggle: SPEC_N=<n> sets depth; SPEC_N=0 (or SPEC=off) disables
+#   KV:        fp8 -> e4m3 (KV_CACHE_DTYPE override)
+#   Vision:    ✅ WORKING — image + video INPUT, no extra flags (measured 2026-08-16).
+#              INPUT ONLY: it consumes media and emits TEXT. No image/video
+#              generation — the arch has no VAE/UNet/diffusion head.
+#              Image: colour+layout described correctly at temp 0 (red/blue/green
+#              discriminated, ~66-70 prompt tokens). Video: 3.25s clip, correct
+#              temporal order + the blended transition frame. Smoke test only —
+#              no vision quality gate, no resolution/duration limits explored.
+#              Video cost ~72.7 tok/s @256x256 (36 tok/frame at default fps=2),
+#              scaling with pixel count: 23 @128px, 263 @512px, 583 @768px.
+#              So ~61 min of 256x256 video fits the 262144 window; ~17 min @512px.
+#   Template:  native — the repo's own chat_template.jinja. NOT froggeric.
+#   Max ctx:   262144 — architectural ceiling, NOT measured on this checkpoint
+#   Genesis:   none
+#   Status:    🧪 Experimental
+# ⚠️ #1096 (accumulated-ctx decode cliff): in long multi-turn agentic, decode collapses to
+#    single-block emission — ~12k accumulated ctx for DFlash2 (SPEC_N depth does NOT move it,
+#    n=3≡n=7) / ~17-21k for MTP; SEVERE on Ampere (~4 tok/s), milder on Blackwell. Drafter TYPE,
+#    not depth, sets the floor. Interim: MTP tier (higher cliff) or SPEC_N=0 for sustained >~20k.
+#    Real fix pending upstream ReplaySSM (vllm#49887 GDN-spec / vllm#50172). NOT immune to this.
+#   Best for:  single-stream INT4 serving with the drafter — the throughput tier
+# ---------------------------------------------------------------------------
+# THE "FAST" TIER — the INT4 counterpart to the official-FP8 "max" tier.
+# Weights are ~9.1 GiB/card at TP=2 against FP8's ~14.4, and that difference is
+# the whole point: it buys KV pool and concurrency headroom, not decode speed.
+#
+# ⭐ WHY n=4 — measured on THIS checkpoint 2026-08-16 (W4A8, 262K, one boot/rung):
+#   n:        0      1      2      3     [4]     5      6
+#   narr:  62.59  52.66  66.63  66.67  76.40  73.70  71.11
+#   code:  57.45  64.15  80.63  84.53 105.60 106.14 107.54
+#   AL:        —   1.94   2.71   3.35   3.90   4.31   4.70
+#   n=4 is the knee: code banks +83.8% there and adds only +0.5%/+1.3% over two
+#   further depths, while narrative peaks at 4 and declines after.
+#   ⚠️ n=1 is WORSE than no drafter on narrative (-15.9%) — shallow speculation
+#      is not a safe fallback on this model.
+#   ⚠️ ACCEPTANCE LENGTH NEVER TURNS (rises to 4.70 at n=6 while throughput
+#      flattens). Do NOT re-tune this from AL — it would pick n=6.
+#   ⚠️ Prompt shape dominates: at n=4, code +83.8% vs narrative +22.1%.
+#   ⭐ No instability at n=4/5/6 (restarts=0, no crash signatures). The 3.6
+#      family's "n>=4 unstable / n=6-8 regress" guidance did NOT reproduce here.
+#
+# ⭐ W4A8 (int8 activations) IS THE SHIPPED DEFAULT since 2026-08-16 — set W4A8=0
+# for the W4A16 path. Measured on this checkpoint, MTP OFF, single variable:
+# +41.8% prefill / -28.6% TTFT@10K, and -8% decode on BOTH prompt shapes;
+# verify-full 9/9 either way.
+#   ⚠️ THE DECODE COST IS REAL AND IS NOW ON BY DEFAULT. It does NOT match the
+#      qwen3.6 tier's W4A8 result (+50% prefill, decode ~neutral) — treat
+#      "decode is free" as a 3.6 finding that did NOT transfer to 3.8.
+#   ⭐ WHY DEFAULT IT ANYWAY: the -8% was measured with the DRAFTER OFF, and the
+#      n-sweep that chose n=4 ran entirely UNDER W4A8. So W4A8 + n=4 — this
+#      config — is the combination that was actually benched (76.40 narrative /
+#      105.60 code), while W4A16 + n=4 has never been measured at all.
+#      Defaulting to int8 makes the shipped default the TESTED path.
+#      ⚠️ The int8-vs-16bit delta UNDER MTP is still unmeasured; -8% is the
+#         MTP-off figure and should not be quoted for this config.
+#   It works here only because this checkpoint is auto-round-packed [k/8,n],
+#   which is what the vendored negscale fold assumes; a compressed-tensors
+#   pack-quantized checkpoint hard-fails that fold (LEARNINGS.md 2026-08-16).
+#
+# ⚠️ CONCURRENCY — the ENGINE CRASH is fixed; a VRAM caveat remains for LONG ctx.
+#   MTP-under-concurrency used to CRASH the engine (Xid 31): the #40756 FlashInfer
+#   decode-plan race + the async wild-write. Both are now closed by the patches
+#   wired below (vllm-flashinfer-decode-pin + vllm-gdn-mtp-async-spec-order), so
+#   MAX_NUM_SEQS now DEFAULTS to **2** (was 8; 8 was validated 2026-08-23, 2x3090,
+#   v0.27.1): clean to C=32 at ~1K-tok prompts, MTP accept ~2.8; spec-decode wins
+#   per-stream latency to ~C=8, batch aggregate peaks with SPEC_N=0 (~306 tok/s).
+#   ⚠️ SEPARATE, STILL-REAL LIMIT — VRAM, NOT the crash, and the patches do NOT
+#     change it: at 16K-tok prompts MTP n=4 UNDER W4A8 hit 23,872 MiB/card (1.75 GB
+#     over the 0.90 budget) already at N=2. Many LONG-context concurrent streams
+#     can still OOM. seqs=8 is validated at short/moderate context only.
+#   → If you OOM under long-context concurrency: lower MAX_NUM_SEQS, or SPEC_N=0
+#     (drops the drafter → ~+27% batch aggregate anyway), or W4A8=0.
+#   → The drafter also costs ~13% of the KV pool (652,346 -> 567,737 tokens).
+#
+# ⚠️ GPU_MEMORY_UTILIZATION IS 0.90 HERE, NOT THE TIER'S 0.92 — DELIBERATE, AND
+#   THE OPPOSITE TRADE FROM WHAT IT LOOKS LIKE. The knob is a ceiling on what
+#   vLLM claims: HIGHER means a bigger KV pool and LESS slack for transient
+#   prefill peaks. The OOM above was exactly such a peak, with the pool idle.
+#   n=4 drafts deeper than the tier's n=3, so its peak is larger. Raising this to
+#   0.92 makes that failure MORE likely, not less. Do not "align to the tier".
+#
+# ⚠️ For concurrent serving set SPEC_N=0 and raise MAX_NUM_SEQS. Measured ceiling
+#   ~49 tok/s aggregate at 10K ctx; usable to N=8 by a 10 tok/s per-stream floor,
+#   or N=4 end-to-end. Past that the engine QUEUES rather than serves — a rung
+#   launched at max_num_seqs=64 logged `Running: 9, Waiting: 55`.
+#
+#
+#
+# ⚠️⚠️ CONSUMER BLACKWELL (5090, sm_120) — READ BEFORE RUNNING THIS THERE.
+#   The compute path differs from Ampere, and one recorded failure hits the
+#   SPEC_N=4 default directly:
+#   1. ⚠️ MTP DEPTH: the thinkingcap W4A8 tier records "n=5 dies within 1-2
+#      sessions, n=4 EVENTUALLY; n=3 and n=0 are stable — hit on 3 rigs incl.
+#      2x 5090" (#838/#758, very likely OPEN vllm#50021). It appears after
+#      MINUTES OF AGENT-SHAPED TRAFFIC, not at boot. ⚠️ Our n=4 knee was found
+#      in SHORT benches on 24 GB AMPERE — that cannot have observed this fault,
+#      so "no instability at n>=4" means "not in a 5-minute bench here", NOT
+#      "safe at depth". On Blackwell, or for sustained agent traffic anywhere,
+#      run SPEC_N=0 (or SPEC_N=3) until vllm#50021 lands in the pin.
+#      ⚠️ Lower n cuts FREQUENCY, not exposure — #838 crashed at n=3.
+#   2. ⚠️ DeepGEMM has NO sm_120/121 recipe and hard-fails "recipe not found" at
+#      boot. The LAUNCHERS inject VLLM_USE_DEEP_GEMM=0 for that card class —
+#      running this by bare `docker compose` on a 5090 SKIPS that injection.
+#      Use switch.sh / launch.sh there, or set it yourself.
+#   3. fp8_e4m3 KV (this compose's default) is correct for sm_120. Do NOT switch
+#      to nvfp4 KV: on consumer Blackwell it routes to a trtllm-gen FP4 FMHA
+#      kernel built only for datacenter Blackwell (sm_100/103) and crashes
+#      (vLLM #43562 / TRT-LLM #10241).
+#   4. 32 GB and mem_util_safe 0.96 mean the memory values here are conservative
+#      on that class — they are calibrated to 24 GB Ampere.
+# ⚠️ MTP is exposed to OPEN vllm#50021 (GDN spec-decode wild write) — RE-VERIFIED
+#    LIVE IN THE v0.27.1 PIN 2026-08-16. ⚠️ The old check path is now a FALSE
+#    NEGATIVE: v0.27.1 vendored flash-linear-attention into vllm, so
+#    `fla/ops/fused_sigmoid_gating.py` returns NOT FOUND — which reads as "fixed".
+#    The kernel moved to vllm/third_party/flash_linear_attention/ops/ and Site 1 is
+#    byte-identical at the same line 106. Mitigate with SPEC_N=0. docs/UPSTREAM.md.
+# WHAT IS AND IS NOT VALIDATED HERE (TP=2, this checkpoint, 2026-08-15/16):
+#   ✅ verify-full 9/9 on BOTH W4A16 and W4A8 · full MTP depth curve n=0..6 ·
+#      prefill/decode at 32K and 262K · a concurrency sweep to N=64.
+#   ❌ THE SHIPPED DEFAULT COMBINATION (W4A16 + MTP n=4) IS ITSELF UNBENCHED:
+#      the W4A16-vs-W4A8 arms ran with MTP OFF, and the depth sweep ran under
+#      W4A8. n=4 is INFERRED for this config, not measured on it.
+#   ❌ No NIAH, no soak, no 8-pack at any depth. 262144 is inherited arithmetic,
+#      never filled on this checkpoint.
+# ===========================================================================
+services:
+  vllm-qwen38-27b-dual-fast:
+    image: vllm/vllm-openai:v0.29.0
+    container_name: qwen-27b-serve
+    user: "0:${DOCKER_GID:-1000}"
+    # Repo contract (test-compose-restart-policy): every shipped vLLM compose uses
+    # the reboot-surviving knob so launch.sh-as-a-service returns after a reboot.
+    # ⚠️ WHEN DEBUGGING A BOOT FAILURE SET CLUB3090_RESTART=no. Under
+    # `unless-stopped` a failing container restart-loops and reports "Up 1 second"
+    # forever, which reads as "still booting" rather than "crashed" — that cost a
+    # 61-restart loop here on 2026-08-15 before anyone checked
+    # `docker inspect --format '{{.RestartCount}}'`. RestartCount is the tell.
+    restart: "no"
+    shm_size: "16gb"
+    ipc: host
+    ports:
+      - "${BIND_HOST:-0.0.0.0}:${PORT:-8113}:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - ${WEIGHTS_DIR:-../../weights}:/root/.cache/huggingface
+      # W4A8 int8-activation patches — NO-OP unless VLLM_MARLIN_INPUT_DTYPE=int8.
+      - ../vllm-patches/w4a8-int8-act:/etc/vllm-patches/w4a8:ro
+      # club-3090 GDN+MTP async spec-order fix — closes the async wild-write race
+      # (our #1052 / upstream #52873 + #50021 thread). Ours, not an upstream PR;
+      # validated 3/3 boots on the reference 2×3090. Anchor drift → boot refused.
+      - ../vllm-patches/vllm-gdn-mtp-async-spec-order:/etc/vllm-patches/gdn-async-order:ro
+      - ../vllm-patches/vllm-flashinfer-decode-pin:/etc/vllm-patches/flashinfer-decode-pin:ro
+      # syv-ai mamba align-checkpoint-order patch (09-08; see README)
+      - ../vllm-patches/vllm-syv-mamba-align-ckpts:/etc/vllm-patches/syv-mamba-ckpts:ro
+      # #53142 mamba-align pre-copy seed: seed the resumed mamba index by the mamba block size (09-11; see README)
+      - ../vllm-patches/vllm-mamba-align-seed:/etc/vllm-patches/mamba-align-seed:ro
+      # #50021 mamba-copy-bounds: bound the align pre-copy block-table columns (MTP speculative column; the deep-ctx prefill IMA); see README
+      - ../vllm-patches/vllm-mamba-copy-bounds:/etc/vllm-patches/mamba-copy-bounds:ro
+      # #50021 Site 1: bound the accepted-count state lookups in the recurrent/sigmoid-gating/SSM/conv spec-decode kernels (MTP-only half); see README
+      - ../vllm-patches/vllm-50021-spec-decode-bounds:/etc/vllm-patches/50021-spec-decode-bounds:ro
+      - ../scripts/detect_nvlink.sh:/etc/vllm-patches/detect_nvlink.sh:ro
+      - ${HOME}/model-recipes-rt/qwen3.8-27b/cache/torch_compile:/root/.cache/vllm/torch_compile_cache
+      - ${HOME}/model-recipes-rt/qwen3.8-27b/cache/triton:/root/.triton/cache
+      - ../templates:/templates:ro
+    environment:
+      # -- model + drafter (mtp: the drafter is the checkpoint's built-in MTP
+      #    head; SPEC_N is its depth. The machine .env overrides any of them.) --
+      TARGET_MODEL: "${TARGET_MODEL:-qwen3.8-27b-autoround-int4}"
+      SPEC_N: "${SPEC_N:-4}"
+      SPEC: "${SPEC:-}"
+      # -- sampler (the ENTRYPOINT derives the row from ENABLE_THINKING) ----
+      ENABLE_THINKING: "${ENABLE_THINKING:-true}"
+      TEMP: "${TEMP:-}"
+      TOP_P: "${TOP_P:-}"
+      TOP_K: "${TOP_K:-}"
+      MIN_P: "${MIN_P:-}"
+      PRESENCE_PENALTY: "${PRESENCE_PENALTY:-}"
+      # -- host / device -------------------------------------------------------
+      # CUDA_VISIBLE_DEVICES is host-interpolated from DEVICE_PAIR (the boot
+      # exports it from the machine .env); the machine .env sets DEVICE_PAIR.
+      NVIDIA_VISIBLE_DEVICES: "${NVIDIA_VISIBLE_DEVICES:-all}"
+      CUDA_VISIBLE_DEVICES: "${DEVICE_PAIR:-0,1}"
+      CUDA_DEVICE_ORDER: "${CUDA_DEVICE_ORDER:-PCI_BUS_ID}"
+      HUGGING_FACE_HUB_TOKEN: "${HUGGING_FACE_HUB_TOKEN:-}"
+      HF_HUB_OFFLINE: "${HF_HUB_OFFLINE:-0}"
+      TRANSFORMERS_OFFLINE: "${TRANSFORMERS_OFFLINE:-0}"
+      VLLM_WORKER_MULTIPROC_METHOD: "${VLLM_WORKER_MULTIPROC_METHOD:-spawn}"
+      NVLINK_MODE: "${NVLINK_MODE:-auto}"
+      VLLM_SKIP_P2P_CHECK: "${VLLM_SKIP_P2P_CHECK:-}"
+      NCCL_CUMEM_ENABLE: "${NCCL_CUMEM_ENABLE:-0}"
+      NCCL_P2P_DISABLE: "${NCCL_P2P_DISABLE:-1}"
+      # WSL2 UVA pin: the V2 runner requires UVA at RequestState init.
+      VLLM_WSL2_ENABLE_PIN_MEMORY: "${VLLM_WSL2_ENABLE_PIN_MEMORY:-1}"
+      VLLM_NO_USAGE_STATS: "${VLLM_NO_USAGE_STATS:-1}"
+      VLLM_USE_FLASHINFER_SAMPLER: "${VLLM_USE_FLASHINFER_SAMPLER:-0}"
+      OMP_NUM_THREADS: "${OMP_NUM_THREADS:-1}"
+      PYTORCH_CUDA_ALLOC_CONF: "${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:False}"
+      # ⭐ W4A8 (int8 activations) ships ON; the entrypoint's gate exports
+      # VLLM_MARLIN_INPUT_DTYPE=int8 only while it is unset and W4A8 != 0.
+      W4A8: "${W4A8:-1}"
+      VLLM_MARLIN_INPUT_DTYPE: "${VLLM_MARLIN_INPUT_DTYPE:-}"
+      # -- mtp prefix-cache shaping + serve shape (host-interpolated) --------
+      MAMBA_CACHE_MODE: "${MAMBA_CACHE_MODE:-align}"
+      PREFIX_MATCH_UNIT: "${PREFIX_MATCH_UNIT:-16}"
+      # ⭐ mamba-block-size 8192 (club-3090, measured 2026-09-04): SSM state
+      # checkpoints every 8192 tokens instead of ~1616 — ~5x fewer state pages
+      # per sequence, the residency/concurrency win; quality-neutral (their
+      # 8-pack 128/150 vs 127/135), prefix-cache granularity and per-turn tail
+      # cost unchanged (measured 2K-200K sweep, cold + follow-ups). 0.29.0 has
+      # the flag natively (CacheConfig.mamba_block_size). MAMBA_BLOCK_SIZE=0
+      # disables (upstream default).
+      MAMBA_BLOCK_SIZE: "${MAMBA_BLOCK_SIZE:-8192}"
+      LONG_PREFILL_TOKEN_THRESHOLD: "${LONG_PREFILL_TOKEN_THRESHOLD:-4096}"
+      KV_CACHE_DTYPE: "${KV_CACHE_DTYPE:-fp8_e4m3}"
+      REASONING_EFFORT: "${REASONING_EFFORT:-low}"
+      CHAT_TEMPLATE: "${CHAT_TEMPLATE:-froggeric-v22.5.jinja}"
+      MAX_MODEL_LEN: "${MAX_MODEL_LEN:-262144}"
+      GPU_MEMORY_UTILIZATION: "${GPU_MEMORY_UTILIZATION:-0.90}"
+      MAX_NUM_SEQS: "${MAX_NUM_SEQS:-2}"
+      MAX_NUM_BATCHED_TOKENS: "${MAX_NUM_BATCHED_TOKENS:-4096}"
+    entrypoint:
+      - bash
+      - -c
+      - |
+        umask 0002
+        set -e
+        source /etc/vllm-patches/detect_nvlink.sh
+        # ⚠️ THIS MUST RUN BEFORE install.sh, NOT AFTER. install.sh only hard-FAILS
+        # on a patch-apply error when VLLM_MARLIN_INPUT_DTYPE is already set; if we
+        # exported it afterwards, a failed patch would downgrade to a WARNING and we
+        # would serve a HALF-WIRED int8 config — the exact thing that guard exists
+        # to prevent.
+        if [ -z "$${VLLM_MARLIN_INPUT_DTYPE:-}" ] && [ "$${W4A8:-1}" != "0" ]; then
+          export VLLM_MARLIN_INPUT_DTYPE=int8
+        fi
+        bash /etc/vllm-patches/w4a8/install.sh
+        bash /etc/vllm-patches/gdn-async-order/install.sh || exit 1
+        FI_PINQ_LIB_ALL="${FI_PINQ_LIB_ALL:-0}" bash /etc/vllm-patches/flashinfer-decode-pin/install.sh || exit 1
+        # syv-ai mamba align-ckpts installer (refuses boot on drift; retention opt-in)
+        bash /etc/vllm-patches/syv-mamba-ckpts/install.sh || exit 1
+        # #53142 installer (refuses boot on drift; always-on, no env gate)
+        bash /etc/vllm-patches/mamba-align-seed/install.sh || exit 1
+        # #50021 mamba-copy-bounds installer (refuses boot on drift; bounds the align pre-copy columns)
+        bash /etc/vllm-patches/mamba-copy-bounds/install.sh || exit 1
+        # #50021 Site 1 installer (refuses boot on drift; bounds the accepted-count state lookups)
+        bash /etc/vllm-patches/50021-spec-decode-bounds/install.sh || exit 1
+        echo "[w4a8] VLLM_MARLIN_INPUT_DTYPE=$${VLLM_MARLIN_INPUT_DTYPE:-<unset -> W4A16>} (W4A8=$${W4A8:-1})"
+        # -- Model resolution: a bare TARGET_MODEL is a folder under the
+        #    WEIGHTS_DIR mount (the Hugging Face cache); a value
+        #    containing / is an HF repo ID or an absolute container path,
+        #    used verbatim. The drafter is the checkpoint's own MTP head
+        #    (built in) - this tier carries no DRAFTER knob.
+        _model="$${TARGET_MODEL:-qwen3.8-27b-autoround-int4}"
+        case "$$_model" in */*) : ;; *) _model="/root/.cache/huggingface/$$_model" ;; esac
+        AR=""
+        [ "$${_NVLINK_ENABLED:-0}" = "1" ] || AR="--disable-custom-all-reduce"
+        # -- Drafter toggle: the same contract on every club-3090 compose --------
+        #   SPEC_N=<n>  drafter depth (this compose defaults to 4); SPEC_N=0 disables
+        #   SPEC=off    back-compat alias for SPEC_N=0
+        # Turning the drafter off is the documented mitigation for vllm#50021 and must
+        # never require editing this file. A non-numeric SPEC_N is a hard error, so a
+        # typo can never masquerade as a silent "drafter off".
+        _spec_n="$${SPEC_N:-4}"
+        case "$${SPEC:-}" in off|OFF|Off|false|no|0) _spec_n=0 ;; esac
+        case "$$_spec_n" in ""|*[!0-9]*)
+          echo "[spec] SPEC_N='$$_spec_n' is not a non-negative integer." >&2
+          echo "[spec] Fix: SPEC_N=<n> sets depth; SPEC_N=0 (or SPEC=off) disables." >&2
+          exit 1 ;;
+        esac
+        SPEC_ARGS=()
+        if [ "$$_spec_n" -gt 0 ]; then
+          SPEC_ARGS=(--speculative-config "{\"method\":\"mtp\",\"num_speculative_tokens\":$$_spec_n,\"draft_sample_method\":\"probabilistic\"}")
+          echo "[spec] drafter ON - mtp n=$$_spec_n" >&2
+        else
+          echo "[spec] drafter OFF (SPEC_N=0 / SPEC=off) - no speculative decoding" >&2
+        fi
+        # -- Sampler follows the reasoning mode ----------------------------------
+        # The card publishes TWO sampler rows (see the header); ENABLE_THINKING
+        # now selects the row — one variable instead of the four-variable ritual
+        # (#1014). `:=` defaults: an explicit TEMP / TOP_P / PRESENCE_PENALTY
+        # from .env or shell STILL WINS in both branches. top_k / min_p are
+        # identical across the rows and stay mode-independent.
+        _temp="$${TEMP:-}"
+        if [ "$${ENABLE_THINKING:-false}" = "true" ]; then
+          : "$${_temp:=1.0}" "$${TOP_P:=0.95}" "$${PRESENCE_PENALTY:=0.0}"
+          echo "[sampler] thinking row (ENABLE_THINKING=true): temp=$$_temp top_p=$${TOP_P} presence=$${PRESENCE_PENALTY}" >&2
+        else
+          : "$${_temp:=0.7}" "$${TOP_P:=0.80}" "$${PRESENCE_PENALTY:=1.5}"
+          echo "[sampler] instruct row (default): temp=$$_temp top_p=$${TOP_P} presence=$${PRESENCE_PENALTY}" >&2
+        fi
+        SAMPLER_ARGS=(--override-generation-config "{\"temperature\":$$_temp,\"top_p\":$${TOP_P},\"top_k\":$${TOP_K:-20},\"min_p\":$${MIN_P:-0.0},\"presence_penalty\":$${PRESENCE_PENALTY}}")
+        exec vllm serve "$$_model" $$AR "$$@" "$${SPEC_ARGS[@]}" "$${SAMPLER_ARGS[@]}"
+      - --
+    command:
+      - --served-model-name
+      - qwen3.8-27b
+      - --quantization
+      - auto_round
+      - --dtype
+      - bfloat16
+      - --tensor-parallel-size
+      - "${TP:-2}"
+      - --max-model-len
+      - "${MAX_MODEL_LEN:-262144}"
+      - --gpu-memory-utilization
+      - "${GPU_MEMORY_UTILIZATION:-0.90}"
+      - --max-num-seqs
+      # ⚠️ 2, NOT 8 — the 2026-08-28 concurrency-safe stance (the CONCURRENCY vs
+      # THE DRAFTER block in the header): the pool holds ~2 near-full 262K-class
+      # streams, so a third waits in a visible queue, never a recompute cascade.
+      - "${MAX_NUM_SEQS:-2}"
+      - --max-num-batched-tokens
+      - "${MAX_NUM_BATCHED_TOKENS:-4096}"
+      # Head-of-line-blocking mitigation (Zylone's vLLM tip; qwen3.6 dual-fast precedent).
+      # Interleaves a long prefill with concurrent decodes so a short/agentic request
+      # isn't starved. Valid range [block_size ~1600, max-num-batched-tokens 8192);
+      # 4096 = qwen3.6's measured 2.7x short-TTFT point (5.8x at 2048).
+      # ⚠️ INERT at max_num_seqs=1; the shipped default is 2, so it engages.
+      # LONG_PREFILL_TOKEN_THRESHOLD=0 disables.
+      - --long-prefill-token-threshold
+      - "${LONG_PREFILL_TOKEN_THRESHOLD:-4096}"
+      - --kv-cache-dtype
+      - "${KV_CACHE_DTYPE:-fp8_e4m3}"
+      - --trust-remote-code
+      # syv-ai 09-08 stance: per-request prompt_tokens_details.cached_tokens
+      # (first diagnostic for the three concurrent streams; zero cost)
+      - --enable-prompt-tokens-details
+      - "${PREFIX_CACHE_ARG:---enable-prefix-caching}"
+      - --enable-chunked-prefill
+      # ⭐ mamba-align prefix caching (2026-08-23, A/B validated on dual-fast MTP):
+      # makes the DeltaNet/SSM state prefix-cacheable → cuts BETWEEN-TURN TTFT
+      # 15-38% on agent traffic (bench-agentic), flatter TTFT-vs-ctx growth
+      # (6.8x vs 9.7x); decode-neutral, soak PASS (0 leak). ⚠️ align mode is
+      # upstream-EXPERIMENTAL + adds ~100ms cold-start TTFT (precopy JIT). Disable
+      # with MAMBA_CACHE_MODE=none. pmu is inert unless align is active.
+      - --mamba-cache-mode
+      - "${MAMBA_CACHE_MODE:-align}"
+      - --prefix-match-unit
+      - "${PREFIX_MATCH_UNIT:-16}"
+      # ⭐ mamba-block-size (club-3090 measured; see env block). 0 disables.
+      - --mamba-block-size
+      - "${MAMBA_BLOCK_SIZE:-8192}"
+      # ⭐ compilation-config (syv-ai): the fused rms_norm/silu_and_mul custom
+      # ops (stock kernels the qwen3.5 model code never wires) + an explicit
+      # 64-token capture cap (covers N=8 x (k+1)=40 and superfast 4x8=32;
+      # vLLM's default capture otherwise rounds unpredictably at N=8).
+      - --compilation-config
+      - '{"max_cudagraph_capture_size":64,"custom_ops":["+rms_norm","+silu_and_mul"]}'
+      - --reasoning-parser
+      - qwen3
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - qwen3_coder
+      - --default-chat-template-kwargs
+      # ⭐ reasoning_effort default = low (2026-08-16). It is a PER-REQUEST OpenAI
+      # control, so this is only the fallback for callers that send nothing — any
+      # agent still picks its own level per request.
+      # ⚠️ INERT while enable_thinking is false (the shipped default): the template
+      # only reads reasoning_effort inside `if enable_thinking is undefined or true`.
+      # It takes effect the moment ENABLE_THINKING=true.
+      # ⚠️ low is an ACTIVE instruction, not "less of medium" — it injects
+      # "Keep your thinking brief and focused, moving directly to the conclusion
+      # without unnecessary elaboration." The three levels are NOT a scale with a
+      # middle: medium has NO branch and injects nothing (the un-nudged baseline),
+      # xhigh adds "think carefully, validate assumptions, consider alternatives"
+      # which is what makes it slow and timeout-prone. REASONING_EFFORT=medium if
+      # you want the model un-nudged rather than pushed toward brevity.
+      # ⚠️ Valid values are xhigh | medium | low. Anything else RAISES at template
+      # render (`high` included — it does NOT silently remap).
+      - '{"enable_thinking": true, "reasoning_effort": "${REASONING_EFFORT:-low}"}'
+      - --chat-template
+      - /templates/${CHAT_TEMPLATE:-froggeric-v22.5.jinja}
+      # SAMPLER moved INTO the entrypoint (#984/#1014): at boot it derives
+      # --override-generation-config from the model-card row matching
+      # ENABLE_THINKING (instruct by default; thinking when true); explicit
+      # TEMP/TOP_P/PRESENCE_PENALTY still win. Both rows: "SAMPLER" header above.
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"

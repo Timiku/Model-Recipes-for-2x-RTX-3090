@@ -1,0 +1,159 @@
+# ===========================================================================
+# MODEL-RECIPES :: qwen3.8-flash-next / vllm / package :: mtp.yml
+#
+# The two-tier package template for the MTP (the mtp head at depth 1; the proven arm) tier. The machine
+# delta (mtp.env / nomtp.env, one folder up beside the bats)
+# is the only knob surface; at boot the start script composes them
+#   docker compose --env-file mtp.env -f package/mtp.yml
+# (a key set in the .env wins; the package default stands otherwise).
+#
+# provenance-class: modified-image - this tier does NOT run a stock
+# vllm/vllm-openai image. The image is the community stack's own build:
+# the vendor-published base below plus humming-kernels, the sha-guarded
+# vLLM overlay, and the serve wrapper as ENTRYPOINT. The wrapper - not
+# compose - turns the profile env into the full vllm flag set; there is
+# no chat-template knob or templates mount on this model (the wrapper
+# carries the tool + reasoning parsers).
+#
+# Provenance (this file)
+#   source     the community 2x3090 stack: docker_serve.sh + serve.yml of
+#              DominikBucko/qwen38-flash-next-2x3090 at the tree pin
+#              (verbatim snapshots: ../baseline/upstream/, its SYNC.md)
+#   parent     the pre-rebase recipe yml (dominikbucko-2x3090/serve.yml) -
+#              this body is that body byte-identical except the deltas
+#              below; the re-home to package/ is Phase 4 of the rebase.
+#   base       vllm/vllm-openai:qwen38-flash-next@sha256:fc120ece0a388cc0aa1caad4a9f1cd92113484ab7ec2fd0efadd62585be05bf8
+#              (the vendor-published line; baseline/upstream/repro.lock.json;
+#              the build that pins it: vllm/Dockerfile)
+#
+# Deltas (this body vs baseline/mtp.yml; enforced by
+#   _shared/scripts/yml-provenance.py check, manifest: ../deltas/mtp.txt)
+#   1. device:    the CUDA_VISIBLE_DEVICES default 0,2 -> 0,1 (the house
+#                seed pair; the machine delta's DEVICE_PAIR overrides it).
+#   2. weights:  the community's required WEIGHTS_DIR form -> the house
+#                defaulted form (blank machine delta = the model's own
+#                weights/ folder, the two-tier seed convention).
+#   3. shm:      the /dev/shm volume mount -> shm_size 16gb (tmpfs; the
+#                PLE output buffers must page-lock - the t21 wall).
+#   4. profile:  RETIRED at the 09-17 re-pin - the upstream wrapper gained
+#                its own ENABLE_VISION gate, so the tower is a machine-delta
+#                knob now (see <tier>.env); no body delta remains.
+#   5. sampler:  six pass-through lines (SAMPLER, TEMP, TOP_P, TOP_K,
+#                MIN_P, PRESENCE_PENALTY) after PYTORCH_CUDA_ALLOC_CONF -
+#                the house sampler knob set the wrapper's LOCAL DELTA #3
+#                reads (serve-container.sh; rows: the Qwen3.8 family card).
+#                SAMPLER=card + blank knobs = no flag = the baseline's
+#                exact behavior. The machine delta owns the values.
+#   6. bind:     the vendor's pinned "127.0.0.1:PORT:PORT" ->
+#                ${BIND_HOST:-127.0.0.1} interpolation: the SAME loopback
+#                pin is the default; the install wizard's bind step writes
+#                BIND_HOST into the machine delta (0.0.0.0 opens the distro
+#                interfaces; LAN reach then needs the mirrored-mode WSL +
+#                firewall.bat).
+# ---------------------------------------------------------------------------
+# Profile (at-a-glance): carried verbatim from the parent (below).
+# ---------------------------------------------------------------------------
+# ===[model-recipes:provenance:end]===
+# Invariants (carried from the source): --ipc host; --cap-add SYS_PTRACE;
+#   the memlock -1 / stack 67108864 ulimits; -p 127.0.0.1:PORT:PORT;
+#   the 19-name env pass-through list (PORT, VLLM_QSA_EXACT_TOPK,
+#   SERVED_MODEL_NAME, MAX_MODEL_LEN, MAX_NUM_BATCHED_TOKENS,
+#   MAX_PARALLEL_LOADING_WORKERS, MAX_NUM_SEQS, KV_CACHE_MEMORY_BYTES,
+#   KV_CACHE_DTYPE, CPU_OFFLOAD_GB, VLLM_PLE_OFFLOAD_READY_TIMEOUT,
+#   VLLM_PLE_DISK_OFFLOAD_DIR,
+#   VLLM_WNA16_STATIC_HOT_CACHE_SIZE, VLLM_WNA16_STATIC_HOT_CACHE_MAX_TOKENS,
+#   VLLM_PREFIX_CACHE_RETENTION_INTERVAL, MTP_DEPTH, ENABLE_VISION,
+#   VISION_MAX_IMAGES, VISION_MAX_PIXELS); the /model mount
+#   point, the /ple-table bind (delta 13), and the single-argument
+#   `/model` command
+# Re-assert (the update-flow rule):
+#   re-fetch scripts/docker_serve.sh at the new pin's tree sha, diff it
+#   against upstream/docker_serve.sh, and re-read the pass-through list and
+#   the flag set into this header before the next boot
+#
+# Profile (at-a-glance):
+#   Model:     Qwen3.8-Flash-Next (the Qwen4 preview; the qwen4_exp arch)
+#              on the community 2x3090 checkpoint: Intel AutoRound W4A16
+#              weights (GPTQ-pack INT4, group 128, sym) + the NVFP4-repo
+#              PLE n-gram table (FP8 E4M3FN) + the 3-stage MTP draft head
+#   Topology:  2x 3090 24 GB (TP=2, expert-parallel, no NVLink)
+#   RAM:       128 GB is the MINIMUM, not the whole: the 95 GiB FP8 PLE
+#              n-gram table lives in a dedicated CPU offload worker
+#              (VLLM_PLE_CPU_OFFLOAD=1, in the wrapper), the routed-expert
+#              tier gets its own 30 GB host budget (CPU_OFFLOAD_GB), and
+#              the load wants swap >=32 GB (64 GB recommended) - the OOM
+#              ladder is documented in the source recipe
+#   KV:        bfloat16 (the image line's choice)
+#   Window:    262144 (256K), single stream by default; the 2-client 128K
+#              profile is a separately validated shape in the source repo
+#   Vision:    the checkpoint is a full VLM (333 model.visual.* tensors);
+#              the source profile runs --language-model-only (this yml's
+#              ENABLE_VISION=0 default); ENABLE_VISION=1 loads the tower
+#              (docs/vision.md pairs it with the hot80 profile)
+#   Drafter:   the MTP 3-stage draft head that ships in the checkpoint,
+#              wired in by the wrapper's speculative-config from
+#              <model>/runtime/mtp-int4-g32
+#   Status:    EXPERIMENTAL - user-gated (the source test plan holds the
+#              accept line: 54.5 tok/s @262K and 127+ warm, single request)
+# ---------------------------------------------------------------------------
+services:
+  vllm-flashnext-2x3090:
+    image: ${VLLM_IMAGE:-qwen38-flash-next-2x3090:locked}
+    container_name: qwen38-flashnext-serve
+    restart: "no"
+    ipc: host
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      stack:
+        soft: 67108864
+        hard: 67108864
+    cap_add:
+      - SYS_PTRACE
+    ports:
+      - "${BIND_HOST:-127.0.0.1}:${PORT:-8115}:${PORT:-8115}"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    shm_size: "16gb"
+    volumes:
+      - ${WEIGHTS_DIR:-../../weights}/${TARGET_MODEL:-qwen3.8-flash-next}:/model:ro
+      - ${PLE_TABLE_DIR:-$HOME/model-recipes-rt/qwen3.8-flash-next/ple-table}:/ple-table
+    environment:
+      - CUDA_DEVICE_ORDER=PCI_BUS_ID
+      - CUDA_VISIBLE_DEVICES=${DEVICE_PAIR:-0,1}
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+      - PORT=${PORT:-8115}
+      - SERVED_MODEL_NAME=${SERVED_MODEL_NAME:-Qwen3.8-Flash-Next}
+      - MAX_MODEL_LEN=${MAX_MODEL_LEN:-262144}
+      - MAX_NUM_BATCHED_TOKENS=${MAX_NUM_BATCHED_TOKENS:-4096}
+      - MAX_PARALLEL_LOADING_WORKERS=${MAX_PARALLEL_LOADING_WORKERS:-1}
+      - MAX_NUM_SEQS=${MAX_NUM_SEQS:-1}
+      - KV_CACHE_MEMORY_BYTES=${KV_CACHE_MEMORY_BYTES:-4429185024}
+      - KV_CACHE_DTYPE=${KV_CACHE_DTYPE:-auto}
+      - CPU_OFFLOAD_GB=${CPU_OFFLOAD_GB:-30}
+      - VLLM_PLE_OFFLOAD_READY_TIMEOUT=${VLLM_PLE_OFFLOAD_READY_TIMEOUT:-1200}
+      - VLLM_PLE_DISK_OFFLOAD_DIR=${VLLM_PLE_DISK_OFFLOAD_DIR:-}
+      - VLLM_WNA16_STATIC_HOT_CACHE_SIZE=${VLLM_WNA16_STATIC_HOT_CACHE_SIZE:-84}
+      - VLLM_WNA16_STATIC_HOT_CACHE_MAX_TOKENS=${VLLM_WNA16_STATIC_HOT_CACHE_MAX_TOKENS:-16}
+      - VLLM_PREFIX_CACHE_RETENTION_INTERVAL=${VLLM_PREFIX_CACHE_RETENTION_INTERVAL:-1600}
+      - VLLM_QSA_EXACT_TOPK=${VLLM_QSA_EXACT_TOPK:-0}
+      - MTP_DEPTH=${MTP_DEPTH:-3}
+      - ENABLE_VISION=${ENABLE_VISION:-0}
+      - VISION_MAX_IMAGES=${VISION_MAX_IMAGES:-1}
+      - VISION_MAX_PIXELS=${VISION_MAX_PIXELS:-1048576}
+      - VLLM_WSL2_ENABLE_PIN_MEMORY=${VLLM_WSL2_ENABLE_PIN_MEMORY:-1}
+      - PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:False}
+      - SAMPLER=${SAMPLER:-card}
+      - TEMP=${TEMP:-}
+      - TOP_P=${TOP_P:-}
+      - TOP_K=${TOP_K:-}
+      - MIN_P=${MIN_P:-}
+      - PRESENCE_PENALTY=${PRESENCE_PENALTY:-}
+    command:
+      - /model

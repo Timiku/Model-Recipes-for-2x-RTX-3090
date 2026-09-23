@@ -1,0 +1,88 @@
+# vLLM #53142 — mamba "align" prefix cache: seed the running mamba
+# state index with the MAMBA block size, not the KV cache block size.
+#
+# Bug: MambaHybridModelState.add_request seeds _mamba_state_idx_gpu with
+#   (num_computed_tokens - 1) // cache_config.block_size
+# i.e. the KV-cache block size. But that index is a MAMBA block index — the
+# align pre-copy (preprocess_state -> run_fused_precopy, driven by
+# MAMBA_BLOCK_SIZE = mamba_spec.block_size) reads the mamba block table
+# at that row. For a request that RESUMES over a prefix-cache hit
+# (num_computed_tokens > 0, first scheduling step), the wrong divisor seeds a
+# row far outside the mamba block table, so the fused pre-copy dereferences
+# a garbage block id -> CUDA illegal memory access that kills the engine on
+# the 2nd large prefill (the 1st request is immune: num_computed==0 seeds -1).
+#
+# Fix: divide by the mamba group's block size instead. The spec is resolved
+# from the runner's kv_cache_config, which is threaded into add_request (a new
+# optional param; the base signature is untouched, and the runner passes it
+# only for MambaHybridModelState). On the box: KV block 128 vs mamba block
+# 2176 -> a 100096-token resume seeds 781 instead of 45.
+#
+# Two files, one logical change:
+#   v1/worker/gpu/model_states/mamba_hybrid.py  (the seed)
+#   v1/worker/gpu/model_runner.py             (thread kv_cache_config in)
+#
+# Authored against vLLM v0.28.0 (the vllm/vllm-openai:v0.28.0 pin).
+# Apply from the installed vllm package dir:
+#   patch -p1 -d <.../vllm> < 53142-mamba-align-seed.patch
+
+--- a/v1/worker/gpu/model_states/mamba_hybrid.py
++++ b/v1/worker/gpu/model_states/mamba_hybrid.py
+@@ -94,14 +94,27 @@
+             self._mamba_group_ids: list[int] = []
+             self._mamba_spec: MambaSpec | None = None
+ 
+-    def add_request(self, req_index: int, new_req_data: NewRequestData) -> None:
++    def add_request(
++        self,
++        req_index: int,
++        new_req_data: NewRequestData,
++        kv_cache_config: KVCacheConfig | None = None,
++    ) -> None:
+         super().add_request(req_index, new_req_data)
+         # Must reset the speculative acceptance count in this idx which could be stale.
+         self.num_accepted_tokens_gpu[req_index].fill_(1)
+         if self._align_mode:
+-            # Seed the running state block from the resumed/prefilled position.
++            # Seed the running state block from the resumed/prefilled position, in
++            # *mamba* block units (the align precopy indexes the mamba block table),
++            # not KV block units. Resolved from the runner's kv_cache_config so it is
++            # correct even on the first add_request, which precedes preprocess_state.
++            if kv_cache_config is not None:
++                _, mamba_spec = self._get_mamba_group_info(kv_cache_config)
++                mamba_block = mamba_spec.block_size
++            else:
++                mamba_block = self.cache_config.block_size
+             self._mamba_state_idx_gpu[req_index].fill_(
+-                (new_req_data.num_computed_tokens - 1) // self.cache_config.block_size
++                (new_req_data.num_computed_tokens - 1) // mamba_block
+             )
+ 
+     def _get_mamba_group_info(
+--- a/v1/worker/gpu/model_runner.py
++++ b/v1/worker/gpu/model_runner.py
+@@ -953,6 +953,10 @@
+                 self.postprocess_sampled(**outputs)
+ 
+     def add_requests(self, scheduler_output: SchedulerOutput) -> None:
++        from vllm.v1.worker.gpu.model_states.mamba_hybrid import (
++            MambaHybridModelState,
++        )
++
+         for new_req_data in scheduler_output.scheduled_new_reqs:
+             assert new_req_data.prompt_token_ids is not None
+             assert new_req_data.prefill_token_ids is not None
+@@ -988,7 +992,12 @@
+             if self.encoder_cache is not None:
+                 self.encoder_cache.add_request(req_id, new_req_data.mm_features)
+ 
+-            self.model_state.add_request(req_index, new_req_data)
++            if isinstance(self.model_state, MambaHybridModelState):
++                self.model_state.add_request(
++                    req_index, new_req_data, self.kv_cache_config
++                )
++            else:
++                self.model_state.add_request(req_index, new_req_data)
+             self.block_tables.append_block_ids(
+                 req_index, new_req_data.block_ids, overwrite=True
+             )

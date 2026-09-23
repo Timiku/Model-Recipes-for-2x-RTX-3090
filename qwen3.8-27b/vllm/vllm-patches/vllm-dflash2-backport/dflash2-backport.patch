@@ -1,0 +1,82 @@
+DFlash2 drafter, v0.29.0 base: the W4A16 KV-dequant slice.
+
+The old form of this bundle (written against 0.27.1) vendored the ENTIRE DFlash2
+drafter: the DFlash2DraftModel (grouped dynamic convolution + candidate selector,
+vLLM PR #52816 by SubSir), its V2-runner speculator, the is_causal precedence, and
+the K-slot / V2-forcing / registry / dispatch wiring, plus the DFlash prepare-inputs
+and rejection-sampler hardening. As of the v0.29.0 base ALL of that is stock: the
+model (model_executor/models/qwen3_dflash2.py) and the speculator
+(v1/worker/gpu/spec_decode/dflash2/) ship in the image, the dispatch in
+v1/worker/gpu/spec_decode/__init__.py already routes DFlash2DraftModel ->
+DFlash2Speculator, and the base qwen3_dflash.py already carries
+decoder_layer_cls / model_cls plus the is_causal precedence. Re-applying any of
+that is a no-op or a red hunk, so none of it is in this patch anymore.
+
+What this slice adds on top of stock 0.29.0, and why it is kept:
+  * _dense_kv_rows (new module-level function in qwen3_dflash.py). The drafter's
+    context-KV precompute reads the [q_size:] rows of each layer's qkv_proj. Stock
+    slices a plain 2-D weight; a compressed-tensors W4A16/W8A16 qkv_proj stores
+    pack-quantized weights, so this dequantizes them (weight_packed * weight_scale)
+    back to a dense bf16 matrix at load time, before the Marlin repack.
+  * _build_context_kv_buffers: re-point the one kv_weights list-comprehension to
+    that helper, so a quantized drafter's context KV precomputes correctly.
+
+That is what lets the box's DFlash2 drafter be W4A16 (small enough to sit beside
+the W4A8 27B at 262K / 0.90) while still precomputing its KV. The drafter's lm_head
+is the target's, and 0.29.0's LogitsProcessor._apply_head already routes any
+quantized head through quant_method.apply(), so no head patch is needed here either.
+
+Dropped (speed only, not load-bearing on this box): the small-k top-k (k_max)
+sampler path and the selector's top-k/top-p proposal truncation that the old bundle
+carried. The conv+selector acceptance gain — the actual reason DFlash2 beats the
+built-in MTP drafter — is entirely stock in 0.29.0.
+
+Provenance: the W4A16 drafter and this dequant derive from the syv-ai
+qwen38-27b-rtx3090 DFlash2 work (see README). Attribution is kept in the README;
+this header only carries what the patch does.
+
+Apply from the installed vllm package dir, after the other patches:
+  patch -p1 -d <site-packages>/vllm < dflash2-backport.patch
+One file, two hunks. It re-anchors cleanly on the v0.29.0 base only; on any other
+base the kv_weights anchor line moves and the apply is a red "find another base"
+signal, not a hunk to hand-nudge.
+
+--- a/model_executor/models/qwen3_dflash.py
++++ b/model_executor/models/qwen3_dflash.py
+@@ -355,6 +355,27 @@
+         return hidden_states, residual
+ 
+ 
++
++def _dense_kv_rows(attn: nn.Module) -> torch.Tensor:
++    """Rows [q_size:] of the qkv projection as a dense bf16 matrix. For a compressed-tensors
++    W4A16/W8A16 (pack-quantized, symmetric, group) qkv_proj this is called from load_weights,
++    i.e. before the Marlin repack, so weight_packed/weight_scale are still in the plain
++    checkpoint layout and can be dequantized here."""
++    qkv = attn.qkv_proj
++    w = getattr(qkv, "weight", None)
++    if w is not None and w.dim() == 2:
++        return w[attn.q_size :]
++    packed, scale = qkv.weight_packed, qkv.weight_scale
++    # (weight_shape holds only the last-loaded shard of a fused qkv; use the tensors.)
++    out_f, in_f = int(packed.shape[0]), int(qkv.input_size)
++    bits = 32 * packed.shape[1] // in_f
++    from compressed_tensors.compressors.pack_quantized.base import unpack_from_int32
++    q = unpack_from_int32(packed.data, bits, torch.Size([out_f, in_f]), packed_dim=1)
++    group = in_f // scale.shape[1]
++    dense = (q.to(torch.float32).reshape(out_f, in_f // group, group)
++             * scale.to(torch.float32)[..., None]).reshape(out_f, in_f)
++    return dense.to(scale.dtype if scale.dtype.is_floating_point else torch.bfloat16)[attn.q_size :]
++
+ @support_torch_compile
+ class DFlashQwen3Model(nn.Module):
+     decoder_layer_cls = DFlashQwen3DecoderLayer
+@@ -469,7 +490,7 @@
+         self._hidden_norm_weight = self.hidden_norm.weight.data
+ 
+         # KV projection weights: [num_layers * 2 * kv_size, hidden_size]
+-        kv_weights = [a.qkv_proj.weight[a.q_size :] for a in layers_attn]
++        kv_weights = [_dense_kv_rows(a) for a in layers_attn]
+         self._fused_kv_weight = torch.cat(kv_weights, dim=0)
+         if has_bias:
+             kv_biases = [a.qkv_proj.bias[a.q_size :] for a in layers_attn]

@@ -1,0 +1,335 @@
+# ===========================================================================
+# MODEL-RECIPES :: qwen3.8-27b / vllm / package :: superfast.yml
+#
+# RETIRED FROM THE PACKAGE, 09-15 — kept here for posterity. This is the fp8
+# DFlash2 tier: its successor on 0.29.0 is kvarndflash2.yml (same drafter,
+# int4 KV), which wins on pool (617,373 vs 424,440), acceptance (a wash) and
+# speed (76.2 vs 63.1 tok/s on the matched code prompt). The package tree no
+# longer ships this yml, its machine delta or its start bat; this tree keeps
+# the tier bootable and this file as its record.
+#
+# The 0.29.0 package template (the rebase). Stock vllm/vllm-openai:v0.29.0
+# + a small, re-evaluated patch set — never a fork (see the doctrine). This
+# file is the PACKAGE default: the full intended config for this tier. A box's
+# machine .env (superfast.env, beside its start bat) feeds these keys; at boot the start script composes them
+#   docker compose --env-file superfast.env -f package/superfast.yml
+# (a key set in the .env wins; the package default stands otherwise).
+#
+# Provenance (this file)
+#   rebased      2026-09-12, Phase 1 of the vLLM 0.29.0 rebase. Stock
+#                v0.27.1 base -> v0.29.0; the 27b's nine patch bundles
+#                re-evaluated against the 0.29.0 source.
+#   base         vllm/vllm-openai:v0.29.0 (Model-Runner-V2 line). The base is
+#                the ONLY thing this file pins; a version bump edits this line
+#                in place.
+#   parent       the pre-rebase package yml (club3090/superfast-271.yml;
+#                v0.27.1 + the 27.1-era DFlash2 backport) — this file is that
+#                body with the 0.29.0 deltas below.
+#
+# Deltas (this body vs stock baseline/superfast.yml; enforced by
+#   _shared/scripts/yml-provenance.py check, manifest: deltas/superfast.txt)
+#   1. image:      stock v0.29.0 (the rebase's base pin).
+#   2. volumes:    - vllm-pr48375-mamba-drop-eagle-block (vllm#48375) —
+#                  DROPPED: 0.29.0 threads drop_eagle_block through every KV
+#                  manager incl. MambaManager, so the fix is stock. (The
+#                  mamba-copy-race #50729 is likewise stock in 0.29.0 and is
+#                  carried only by the nomtp sibling, not here.)
+#   3. volumes:    the kept bundles re-anchored to 0.29.0 where their target
+#                  moved: gdn-async-order, syv-mamba-ckpts, mamba-align-seed
+#                  (each install.sh is boot-refusing). syv-xgrammar is DROPPED —
+#                  0.29.0 carries its accept_tokens fix verbatim (redundant);
+#                  dflash2 + w4a8 + flashinfer-decode-pin re-apply unchanged.
+#   4. environment: the machine-tunable knobs are literal package defaults here;
+#                  the machine .env overrides them (DEVICE_PAIR, BIND_HOST/PORT,
+#                  WEIGHTS_DIR, TARGET_MODEL, DRAFTER_MODEL, the ctx/concurrency
+#                  shape, the sampler row).
+#   5. everything else (volumes, entrypoint, command, the W4A8 gate, the drafter
+#                  contract, the invariants) is byte-identical to the pre-rebase
+#                  body except where a dropped/re-anchored bundle touches it.
+#   6. (09-14, community sweep) four syv-ai/club-3090 tweaks, boot-gated:
+#      spec-config gains "draft_sample_method":"probabilistic" (syv: 0.29.0's
+#      default is greedy; ~20% acceptance); --mamba-block-size 8192
+#      (club-3090: ~5x fewer SSM state pages — the direct answer to this
+#      tier's C=8 VRAM OOM wall); --compilation-config with the fused
+#      rms_norm/silu_and_mul custom ops + a 64-token graph cap; and the
+#      served CHAT_TEMPLATE defaults to the vendored froggeric-v22.5.jinja.
+#      Deliberately NOT shipped: --language-model-only (user hard rule — the
+#      vision tower stays loaded), align mode (club-3090 measured a null on
+#      dflash2 composes under 0.29.0), --mamba-ssm-cache-dtype (auto already
+#      infers bf16 on 0.29.0).
+#
+# Invariants (carried from the pre-rebase body): restart "no"; the
+#   CUDA_VISIBLE_DEVICES=${DEVICE_PAIR} + PCI_BUS_ID pin; expandable_segments:False;
+#   VLLM_WSL2_ENABLE_PIN_MEMORY; the W4A8 gate ordering; the six install.sh calls
+#   (dflash2 last, boot-refusing); the DFlash2-EXTERNAL drafter contract (n=7);
+#   the thinking-preset sampler logic; 262144 ctx; 0.90 util; fp8 KV; the
+#   qwen3 / qwen3_coder parsers; the template kwargs; MAX_NUM_SEQS 1.
+#
+# Re-assert (the gate that keeps this file honest):
+#   python3 _shared/scripts/yml-provenance.py check \
+#     --yml qwen3.8-27b/vllm/package/superfast.yml \
+#     --source qwen3.8-27b/vllm/baseline/superfast.yml \
+#     --manifest qwen3.8-27b/vllm/deltas/superfast.txt
+#   python3 _shared/scripts/yml-provenance.py lint --yml <this file>
+#
+# ===[model-recipes:provenance:end]===
+# ===========================================================================
+# Profile (at-a-glance):
+#   Model:     Qwen3.8-27B (Frozenlock AutoRound INT4, ~18 GiB; lm_head bf16).
+#              Served W4A8 (int8 activations, W4A8=0 for W4A16). SPEED series.
+#   Topology:  2× 3090 PCIe (TP=2, no NVLink)
+#   Drafter:   DFlash2 EXTERNAL block-drafter n=7 (syv-ai W4A16, method=dflash).
+#   KV:        fp8_e4m3 → FlashInfer (fp8 KV can't use FLASH_ATTN on Ampere).
+#   Vision:    ✅ tower present (input-only); untested on this tier.
+#   Template:  native.
+#   Max ctx:   262144 (full arch max — fp8 KV is 2× smaller than bf16, so unlike the
+#              ultrafast/bf16 tier this fits the full 262K).
+#   Genesis:   none
+#   Status:    🧪 Experimental
+# ⚠️ #1096 (accumulated-ctx decode cliff): in long multi-turn agentic, decode collapses to
+#    single-block emission — ~12k accumulated ctx for DFlash2 (SPEC_N depth does NOT move it,
+#    n=3≡n=7) / ~17-21k for MTP; SEVERE on Ampere (~4 tok/s), milder on Blackwell. Drafter TYPE,
+#    not depth, sets the floor. Interim: MTP tier (higher cliff) or SPEC_N=0 for sustained >~20k.
+#    Real fix pending upstream ReplaySSM (vllm#49887 GDN-spec / vllm#50172). NOT immune to this.
+#   Best for:  DFlash2 on the FAST envelope — full 262K + concurrency. (Immune to the #52873 acceptance-collapse, NOT the #1096 ctx cliff — see below.)
+# ---------------------------------------------------------------------------
+# SUPERFAST = the FAST tier (int4, fp8 KV, 262K) with MTP → DFlash2. vs fast/MTP:
+# +~30% code, same narrative, and structurally sidesteps the built-in-MTP collapse
+# (#1052 / vllm#52873). vs ultrafast (bf16/FA2, ~200K, 132/227): superfast keeps the
+# full 262K + fp8 concurrency headroom at a decode cost (fp8 KV forces FlashInfer,
+# not FLASH_ATTN — see learnings/qwen3.8-27b.md). Measured on-rig (dual, int4+fp8+
+# W4A8+DFlash2, 2026-08-20): verify-full 9/9, ~74 narr / ~139 code TPS.
+# ⚠️ Spec-decode exposed to OPEN vllm#50021; SPEC_N=0 mitigates. Launch --force.
+# ===========================================================================
+services:
+  vllm-qwen38-27b-dual-superfast:
+    image: vllm/vllm-openai:v0.29.0
+    container_name: qwen-27b-superfast-serve
+    user: "0:${DOCKER_GID:-1000}"
+    # Repo contract (test-compose-restart-policy): every shipped vLLM compose uses
+    # the reboot-surviving knob so launch.sh-as-a-service returns after a reboot.
+    # ⚠️ WHEN DEBUGGING A BOOT FAILURE SET CLUB3090_RESTART=no. Under
+    # `unless-stopped` a failing container restart-loops and reports "Up 1 second"
+    # forever, which reads as "still booting" rather than "crashed" — that cost a
+    # 61-restart loop here on 2026-08-15 before anyone checked
+    # `docker inspect --format '{{.RestartCount}}'`. RestartCount is the tell.
+    restart: "no"
+    shm_size: "16gb"
+    ipc: host
+    ports:
+      - "${BIND_HOST:-0.0.0.0}:${PORT:-8104}:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - ${WEIGHTS_DIR:-../../weights}:/root/.cache/huggingface
+      # W4A8 int8-activation patches — NO-OP unless VLLM_MARLIN_INPUT_DTYPE=int8.
+      - ../vllm-patches/w4a8-int8-act:/etc/vllm-patches/w4a8:ro
+      # club-3090 GDN+MTP async spec-order fix — closes the async wild-write race
+      # (our #1052 / upstream #52873 + #50021 thread). Ours, not an upstream PR;
+      # validated 3/3 boots on the reference 2×3090. Anchor drift → boot refused.
+      - ../vllm-patches/vllm-gdn-mtp-async-spec-order:/etc/vllm-patches/gdn-async-order:ro
+      - ../vllm-patches/vllm-flashinfer-decode-pin:/etc/vllm-patches/flashinfer-decode-pin:ro
+      # DFlash2 external-drafter support — vLLM PR#52816 backport (syv-ai). Adds
+      # DFlash2DraftModel; refuses boot on apply failure.
+      - ../vllm-patches/vllm-dflash2-backport:/etc/vllm-patches/dflash2:ro
+      # syv-ai mamba align-checkpoint-order patch (09-08; see README)
+      - ../vllm-patches/vllm-syv-mamba-align-ckpts:/etc/vllm-patches/syv-mamba-ckpts:ro
+      # #53142 mamba-align pre-copy seed: seed the resumed mamba index by the mamba block size (09-11; see README)
+      - ../vllm-patches/vllm-mamba-align-seed:/etc/vllm-patches/mamba-align-seed:ro
+      - ../scripts/detect_nvlink.sh:/etc/vllm-patches/detect_nvlink.sh:ro
+      - ${HOME}/model-recipes-rt/qwen3.8-27b/cache/torch_compile:/root/.cache/vllm/torch_compile_cache
+      - ${HOME}/model-recipes-rt/qwen3.8-27b/cache/triton:/root/.triton/cache
+      - ../templates:/templates:ro
+    environment:
+      # -- model + drafter (the entrypoint resolves these; the machine .env
+      #    overrides any of them) ------------------------------------------
+      TARGET_MODEL: "${TARGET_MODEL:-qwen3.8-27b-autoround-int4}"
+      DRAFTER_MODEL: "${DRAFTER_MODEL:-qwen3.8-27b-dflash2-w4a16}"
+      SPEC_N: "${SPEC_N:-7}"
+      SPEC: "${SPEC:-}"
+      # -- sampler (the ENTRYPOINT derives the row from ENABLE_THINKING) ----
+      ENABLE_THINKING: "${ENABLE_THINKING:-true}"
+      TEMP: "${TEMP:-}"
+      TOP_P: "${TOP_P:-}"
+      TOP_K: "${TOP_K:-}"
+      MIN_P: "${MIN_P:-}"
+      PRESENCE_PENALTY: "${PRESENCE_PENALTY:-}"
+      # -- host / device ----------------------------------------------------
+      # CUDA_VISIBLE_DEVICES is host-interpolated from DEVICE_PAIR (the boot
+      # exports it from the machine .env); the machine .env sets DEVICE_PAIR.
+      NVIDIA_VISIBLE_DEVICES: "${NVIDIA_VISIBLE_DEVICES:-all}"
+      CUDA_VISIBLE_DEVICES: "${DEVICE_PAIR:-0,1}"
+      CUDA_DEVICE_ORDER: "${CUDA_DEVICE_ORDER:-PCI_BUS_ID}"
+      HUGGING_FACE_HUB_TOKEN: "${HUGGING_FACE_HUB_TOKEN:-}"
+      HF_HUB_OFFLINE: "${HF_HUB_OFFLINE:-0}"
+      TRANSFORMERS_OFFLINE: "${TRANSFORMERS_OFFLINE:-0}"
+      VLLM_WORKER_MULTIPROC_METHOD: "${VLLM_WORKER_MULTIPROC_METHOD:-spawn}"
+      NVLINK_MODE: "${NVLINK_MODE:-auto}"
+      VLLM_SKIP_P2P_CHECK: "${VLLM_SKIP_P2P_CHECK:-}"
+      NCCL_CUMEM_ENABLE: "${NCCL_CUMEM_ENABLE:-0}"
+      NCCL_P2P_DISABLE: "${NCCL_P2P_DISABLE:-1}"
+      # WSL2 UVA pin: the V2 runner requires UVA at RequestState init.
+      VLLM_WSL2_ENABLE_PIN_MEMORY: "${VLLM_WSL2_ENABLE_PIN_MEMORY:-1}"
+      VLLM_NO_USAGE_STATS: "${VLLM_NO_USAGE_STATS:-1}"
+      VLLM_USE_FLASHINFER_SAMPLER: "${VLLM_USE_FLASHINFER_SAMPLER:-0}"
+      OMP_NUM_THREADS: "${OMP_NUM_THREADS:-1}"
+      PYTORCH_CUDA_ALLOC_CONF: "${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:False}"
+      # ⭐ W4A8 (int8 activations) ships ON; the entrypoint's gate exports
+      # VLLM_MARLIN_INPUT_DTYPE=int8 only while it is unset and W4A8 != 0.
+      W4A8: "${W4A8:-1}"
+      VLLM_MARLIN_INPUT_DTYPE: "${VLLM_MARLIN_INPUT_DTYPE:-}"
+      # ⭐ mamba-block-size 8192 (club-3090, measured 2026-09-04): SSM state
+      # checkpoints every 8192 tokens instead of ~1616 — ~5x fewer state pages
+      # per sequence; the direct answer to this tier's C=8 VRAM OOM wall
+      # (their own bench: "DFlash2 dual-superfast OOMs at C=8 regardless").
+      # Quality-neutral, prefix-cache granularity unchanged (2K-200K sweep).
+      # 0.29.0 has the flag natively. MAMBA_BLOCK_SIZE=0 disables.
+      MAMBA_BLOCK_SIZE: "${MAMBA_BLOCK_SIZE:-8192}"
+    entrypoint:
+      - bash
+      - -c
+      - |
+        umask 0002
+        set -e
+        source /etc/vllm-patches/detect_nvlink.sh
+        # ⚠️ THIS MUST RUN BEFORE install.sh, NOT AFTER. install.sh only hard-FAILS
+        # on a patch-apply error when VLLM_MARLIN_INPUT_DTYPE is already set; if we
+        # exported it afterwards, a failed patch would downgrade to a WARNING and we
+        # would serve a HALF-WIRED int8 config — the exact thing that guard exists
+        # to prevent.
+        if [ -z "$${VLLM_MARLIN_INPUT_DTYPE:-}" ] && [ "$${W4A8:-1}" != "0" ]; then
+          export VLLM_MARLIN_INPUT_DTYPE=int8
+        fi
+        bash /etc/vllm-patches/w4a8/install.sh
+        bash /etc/vllm-patches/gdn-async-order/install.sh || exit 1
+        FI_PINQ_LIB_ALL="${FI_PINQ_LIB_ALL:-0}" bash /etc/vllm-patches/flashinfer-decode-pin/install.sh || exit 1
+        # syv-ai mamba align-ckpts installer (refuses boot on drift; retention opt-in)
+        bash /etc/vllm-patches/syv-mamba-ckpts/install.sh || exit 1
+        # #53142 installer (refuses boot on drift; always-on, no env gate)
+        bash /etc/vllm-patches/mamba-align-seed/install.sh || exit 1
+        bash /etc/vllm-patches/dflash2/install.sh || exit 1
+        echo "[w4a8] VLLM_MARLIN_INPUT_DTYPE=$${VLLM_MARLIN_INPUT_DTYPE:-<unset -> W4A16>} (W4A8=$${W4A8:-1})"
+        # -- Model + drafter resolution: a bare knob value is a folder
+        #    under the WEIGHTS_DIR mount (the Hugging Face cache); a
+        #    value containing / is an HF repo ID or an absolute
+        #    container path, used verbatim
+        _model="$${TARGET_MODEL:-qwen3.8-27b-autoround-int4}"
+        case "$$_model" in */*) : ;; *) _model="/root/.cache/huggingface/$$_model" ;; esac
+        AR=""
+        [ "$${_NVLINK_ENABLED:-0}" = "1" ] || AR="--disable-custom-all-reduce"
+        # -- Drafter toggle: the same contract on every club-3090 compose --------
+        #   SPEC_N=<n>  drafter depth (this compose defaults to 7); SPEC_N=0 disables
+        #   SPEC=off    back-compat alias for SPEC_N=0
+        # Turning the drafter off is the documented mitigation for vllm#50021 and must
+        # never require editing this file. A non-numeric SPEC_N is a hard error, so a
+        # typo can never masquerade as a silent "drafter off".
+        _spec_n="$${SPEC_N:-7}"
+        case "$${SPEC:-}" in off|OFF|Off|false|no|0) _spec_n=0 ;; esac
+        case "$$_spec_n" in ""|*[!0-9]*)
+          echo "[spec] SPEC_N='$$_spec_n' is not a non-negative integer." >&2
+          echo "[spec] Fix: SPEC_N=<n> sets DFlash2 draft width; SPEC_N=0 (SPEC=off) disables." >&2
+          exit 1 ;;
+        esac
+        DRAFTER="$${DRAFTER_MODEL:-qwen3.8-27b-dflash2-w4a16}"
+        case "$$DRAFTER" in */*) : ;; *) DRAFTER="/root/.cache/huggingface/$$DRAFTER" ;; esac
+        SPEC_ARGS=()
+        if [ "$$_spec_n" -gt 0 ]; then
+          SPEC_ARGS=(--speculative-config "{\"method\":\"dflash\",\"model\":\"$$DRAFTER\",\"num_speculative_tokens\":$$_spec_n,\"draft_sample_method\":\"probabilistic\"}")
+          echo "[spec] DFlash2 EXTERNAL drafter ON - n=$$_spec_n ($$DRAFTER)" >&2
+        else
+          echo "[spec] drafter OFF (SPEC_N=0 / SPEC=off)" >&2
+        fi
+        # -- Sampler follows the reasoning mode ----------------------------------
+        # The card publishes TWO sampler rows (see the header); ENABLE_THINKING
+        # now selects the row — one variable instead of the four-variable ritual
+        # (#1014). `:=` defaults: an explicit TEMP / TOP_P / PRESENCE_PENALTY
+        # from .env or shell STILL WINS in both branches. top_k / min_p are
+        # identical across the rows and stay mode-independent.
+        _temp="$${TEMP:-}"
+        if [ "$${ENABLE_THINKING:-false}" = "true" ]; then
+          : "$${_temp:=1.0}" "$${TOP_P:=0.95}" "$${PRESENCE_PENALTY:=0.0}"
+          echo "[sampler] thinking row (ENABLE_THINKING=true): temp=$$_temp top_p=$${TOP_P} presence=$${PRESENCE_PENALTY}" >&2
+        else
+          : "$${_temp:=0.7}" "$${TOP_P:=0.80}" "$${PRESENCE_PENALTY:=1.5}"
+          echo "[sampler] instruct row (default): temp=$$_temp top_p=$${TOP_P} presence=$${PRESENCE_PENALTY}" >&2
+        fi
+        SAMPLER_ARGS=(--override-generation-config "{\"temperature\":$$_temp,\"top_p\":$${TOP_P},\"top_k\":$${TOP_K:-20},\"min_p\":$${MIN_P:-0.0},\"presence_penalty\":$${PRESENCE_PENALTY}}")
+        exec vllm serve "$$_model" $$AR "$$@" "$${SPEC_ARGS[@]}" "$${SAMPLER_ARGS[@]}"
+      - --
+    command:
+      - --served-model-name
+      - qwen3.8-27b
+      - --quantization
+      - auto_round
+      - --dtype
+      - bfloat16
+      - --tensor-parallel-size
+      - "${TP:-2}"
+      - --max-model-len
+      - "${MAX_MODEL_LEN:-262144}"
+      - --gpu-memory-utilization
+      - "${GPU_MEMORY_UTILIZATION:-0.90}"
+      - --max-num-seqs
+      # ⚠️ 1, NOT 2 — single-stream. The DFlash2 drafter + 24 GB leaves no room
+      # for a second stream on TP=2. For concurrency: SPEC_N=0 (drop the drafter)
+      # and then raise MAX_NUM_SEQS.
+      - "${MAX_NUM_SEQS:-1}"
+      - --max-num-batched-tokens
+      - "${MAX_NUM_BATCHED_TOKENS:-8192}"
+      # Head-of-line-blocking mitigation (Zylone's vLLM tip; qwen3.6 dual-fast precedent).
+      # Interleaves a long prefill with concurrent decodes so a short/agentic request
+      # isn't starved. Valid range [block_size ~1600, max-num-batched-tokens 8192);
+      # 4096 = qwen3.6's measured 2.7x short-TTFT point (5.8x at 2048).
+      # ⚠️ INERT at max_num_seqs=1 (the shipped default) — preparatory for concurrency.
+      # LONG_PREFILL_TOKEN_THRESHOLD=0 disables.
+      - --long-prefill-token-threshold
+      - "${LONG_PREFILL_TOKEN_THRESHOLD:-4096}"
+      - --kv-cache-dtype
+      - "${KV_CACHE_DTYPE:-fp8_e4m3}"
+      # ⭐ mamba-block-size (club-3090 measured; see env block). 0 disables.
+      - --mamba-block-size
+      - "${MAMBA_BLOCK_SIZE:-8192}"
+      # ⭐ compilation-config (syv-ai): fused rms_norm/silu_and_mul custom ops
+      # + a 64-token graph cap (covers N=4 x (7+1)=32).
+      - --compilation-config
+      - '{"max_cudagraph_capture_size":64,"custom_ops":["+rms_norm","+silu_and_mul"]}'
+      - --trust-remote-code
+      - "${PREFIX_CACHE_ARG:---enable-prefix-caching}"
+      - --enable-chunked-prefill
+      - --reasoning-parser
+      - qwen3
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - qwen3_coder
+      - --default-chat-template-kwargs
+      # ⭐ reasoning_effort default = low (2026-08-16). It is a PER-REQUEST OpenAI
+      # control, so this is only the fallback for callers that send nothing — any
+      # agent still picks its own level per request.
+      # ⚠️ INERT while enable_thinking is false (the shipped default): the template
+      # only reads reasoning_effort inside `if enable_thinking is undefined or true`.
+      # It takes effect the moment ENABLE_THINKING=true.
+      # ⚠️ low is an ACTIVE instruction, not "less of medium" — it injects
+      # "Keep your thinking brief and focused, moving directly to the conclusion
+      # without unnecessary elaboration." The three levels are NOT a scale with a
+      # middle: medium has NO branch and injects nothing (the un-nudged baseline),
+      # xhigh adds "think carefully, validate assumptions, consider alternatives"
+      # which is what makes it slow and timeout-prone. REASONING_EFFORT=medium if
+      # you want the model un-nudged rather than pushed toward brevity.
+      # ⚠️ Valid values are xhigh | medium | low. Anything else RAISES at template
+      # render (`high` included — it does NOT silently remap).
+      - '{"enable_thinking": true, "reasoning_effort": "${REASONING_EFFORT:-low}"}'
+      - --chat-template
+      - /templates/${CHAT_TEMPLATE:-froggeric-v22.5.jinja}
+      # SAMPLER moved INTO the entrypoint (#984/#1014): at boot it derives
+      # --override-generation-config from the model-card row matching
+      # ENABLE_THINKING (instruct by default; thinking when true); explicit
+      # TEMP/TOP_P/PRESENCE_PENALTY still win. Both rows: "SAMPLER" header above.
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"

@@ -1,0 +1,84 @@
+# deltas/gemma-dual.txt  --  rebase manifest, auto-generated (pre-rebase body -> this body).
+#   DEL  = a line of the baseline body the rebase removes
+#   ADD  = a line the rebase adds to this body
+#   each pattern is the exact escaped line; re-run the generator to re-anchor
+#   gate: yml-provenance.py check  --yml ../package/gemma-dual.yml
+#           --source ../baseline/gemma-dual.yml  --manifest <this>
+DEL \ \ \ \ \ \ \-\ \./templates:/templates:ro
+DEL \ \ \ \ \ \ \-\ \.\./\.\./scripts/detect_nvlink\.sh:/etc/club3090/detect_nvlink\.sh:ro
+DEL \ \ \ \ \ \ \-\ NVIDIA_VISIBLE_DEVICES=\$\{NVIDIA_VISIBLE_DEVICES:\-all\}
+DEL \ \ \ \ \ \ \#\ CUDA\-level\ GPU\ mask\ —\ the\ runtime\-agnostic\ half\ of\ GPU\ selection
+DEL \ \ \ \ \ \ \#\ \(\#610\):\ launch\.sh\ \-\-gpus\ exports\ GPU\ UUIDs\ here\.\ CDI\ runtimes\ \(NixOS,
+DEL \ \ \ \ \ \ \#\ nvidia\-ctk\ cdi\)\ IGNORE\ NVIDIA_VISIBLE_DEVICES,\ so\ this\ mask\ is\ what
+DEL \ \ \ \ \ \ \#\ actually\ pins\ cards\ there;\ on\ the\ classic\ runtime\ the\ UUID\ form\ is
+DEL \ \ \ \ \ \ \#\ renumbering\-proof\.\ Unset\ →\ absent\ \(no\ masking\)\.
+DEL \ \ \ \ \ \ \-\ CUDA_VISIBLE_DEVICES=\$\{DEVICE_PAIR:\-0,1\}
+DEL \ \ \ \ \ \ \-\ CUDA_DEVICE_ORDER=PCI_BUS_ID
+DEL \ \ \ \ \ \ \#\ Model\ selection\ —\ docker\ only\ forwards\ what\ is\ declared\ here;\ the
+DEL \ \ \ \ \ \ \#\ DEFAULT\ lives\ in\ the\ entrypoint\ \(the\ three\-way\ knob\ grammar\)\.
+DEL \ \ \ \ \ \ \-\ TARGET_MODEL=\$\{TARGET_MODEL:\-\}
+DEL \ \ \ \ \ \ \-\ SPEC_N=\$\{SPEC_N:\-\}
+DEL \ \ \ \ \ \ \-\ SPEC=\$\{SPEC:\-\}
+DEL \ \ \ \ \ \ \-\ DRAFTER_MODEL=\$\{DRAFTER_MODEL:\-\}
+DEL \ \ \ \ \ \ \-\ HUGGING_FACE_HUB_TOKEN=\$\{HF_TOKEN:\-\}
+DEL \ \ \ \ \ \ \-\ HF_HUB_OFFLINE=\$\{HF_HUB_OFFLINE:\-\$\{OFFLINE:\-0\}\}
+DEL \ \ \ \ \ \ \-\ TRANSFORMERS_OFFLINE=\$\{TRANSFORMERS_OFFLINE:\-\$\{OFFLINE:\-0\}\}
+DEL \ \ \ \ \ \ \-\ VLLM_WORKER_MULTIPROC_METHOD=spawn
+DEL \ \ \ \ \ \ \-\ NVLINK_MODE=\$\{NVLINK_MODE:\-auto\}
+DEL \ \ \ \ \ \ \#\ Opt\-in\ transfer\ check:\ VLLM_SKIP_P2P_CHECK=0\ makes\ vLLM\ PROVE\ peer\ access\ by
+DEL \ \ \ \ \ \ \#\ moving\ bytes\ \(report\.sh\ reads\ the\ cache\)\.\ Bare\ passthrough\ —\ absent\ unless\ set\.
+DEL \ \ \ \ \ \ \#\ docs/PCIE_P2P\.md\ §7\.
+DEL \ \ \ \ \ \ \-\ VLLM_SKIP_P2P_CHECK
+DEL \ \ \ \ \ \ \-\ NCCL_CUMEM_ENABLE=0
+DEL \ \ \ \ \ \ \-\ NCCL_P2P_DISABLE=1
+DEL \ \ \ \ \ \ \-\ VLLM_NO_USAGE_STATS=1
+DEL \ \ \ \ \ \ \-\ OMP_NUM_THREADS=1
+DEL \ \ \ \ \ \ \-\ VLLM_WSL2_ENABLE_PIN_MEMORY=\$\{VLLM_WSL2_ENABLE_PIN_MEMORY:\-1\}
+DEL \ \ \ \ \ \ \-\ PYTORCH_CUDA_ALLOC_CONF=\$\{PYTORCH_CUDA_ALLOC_CONF:\-expandable_segments:False\}
+DEL \ \ \ \ \ \ \-\ VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
+DEL \ \ \ \ \ \ \-\ TRITON_CACHE_DIR=/root/\.triton/cache
+DEL \ \ \ \ \ \ \ \ source\ /etc/club3090/detect_nvlink\.sh
+ADD \ \ \ \ \ \ \-\ \.\./templates:/templates:ro
+ADD \ \ \ \ \ \ \-\ \.\./scripts/detect_nvlink\.sh:/etc/vllm\-patches/detect_nvlink\.sh:ro
+ADD \ \ \ \ \ \ \#\ \-\-\ model\ \+\ drafter\ \(the\ MTP\ assistant;\ SPEC_N\ is\ its\ depth,\ 0\ =\ off\)\ \-\-
+ADD \ \ \ \ \ \ TARGET_MODEL:\ "\$\{TARGET_MODEL:\-gemma\-4\-31b\-qat\-awq\-int4\}"
+ADD \ \ \ \ \ \ SPEC_N:\ "\$\{SPEC_N:\-2\}"
+ADD \ \ \ \ \ \ SPEC:\ "\$\{SPEC:\-\}"
+ADD \ \ \ \ \ \ DRAFTER_MODEL:\ "\$\{DRAFTER_MODEL:\-gemma\-4\-31b\-it\-assistant\}"
+ADD \ \ \ \ \ \ \#\ \-\-\ host\ /\ device\ \-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-
+ADD \ \ \ \ \ \ \#\ CUDA_VISIBLE_DEVICES\ is\ host\-interpolated\ from\ DEVICE_PAIR\ \(the\ boot
+ADD \ \ \ \ \ \ \#\ exports\ it\ from\ the\ machine\ \.env\);\ the\ machine\ \.env\ sets\ DEVICE_PAIR\.
+ADD \ \ \ \ \ \ NVIDIA_VISIBLE_DEVICES:\ "\$\{NVIDIA_VISIBLE_DEVICES:\-all\}"
+ADD \ \ \ \ \ \ CUDA_VISIBLE_DEVICES:\ "\$\{DEVICE_PAIR:\-0,1\}"
+ADD \ \ \ \ \ \ CUDA_DEVICE_ORDER:\ "\$\{CUDA_DEVICE_ORDER:\-PCI_BUS_ID\}"
+ADD \ \ \ \ \ \ HUGGING_FACE_HUB_TOKEN:\ "\$\{HUGGING_FACE_HUB_TOKEN:\-\}"
+ADD \ \ \ \ \ \ HF_HUB_OFFLINE:\ "\$\{HF_HUB_OFFLINE:\-0\}"
+ADD \ \ \ \ \ \ TRANSFORMERS_OFFLINE:\ "\$\{TRANSFORMERS_OFFLINE:\-0\}"
+ADD \ \ \ \ \ \ VLLM_WORKER_MULTIPROC_METHOD:\ "\$\{VLLM_WORKER_MULTIPROC_METHOD:\-spawn\}"
+ADD \ \ \ \ \ \ NVLINK_MODE:\ "\$\{NVLINK_MODE:\-auto\}"
+ADD \ \ \ \ \ \ VLLM_SKIP_P2P_CHECK:\ "\$\{VLLM_SKIP_P2P_CHECK:\-\}"
+ADD \ \ \ \ \ \ NCCL_CUMEM_ENABLE:\ "\$\{NCCL_CUMEM_ENABLE:\-0\}"
+ADD \ \ \ \ \ \ NCCL_P2P_DISABLE:\ "\$\{NCCL_P2P_DISABLE:\-1\}"
+ADD \ \ \ \ \ \ VLLM_NO_USAGE_STATS:\ "\$\{VLLM_NO_USAGE_STATS:\-1\}"
+ADD \ \ \ \ \ \ OMP_NUM_THREADS:\ "\$\{OMP_NUM_THREADS:\-1\}"
+ADD \ \ \ \ \ \ \#\ WSL2\ UVA\ pin:\ the\ V2\ runner\ requires\ UVA\ at\ RequestState\ init\.
+ADD \ \ \ \ \ \ VLLM_WSL2_ENABLE_PIN_MEMORY:\ "\$\{VLLM_WSL2_ENABLE_PIN_MEMORY:\-1\}"
+ADD \ \ \ \ \ \ PYTORCH_CUDA_ALLOC_CONF:\ "\$\{PYTORCH_CUDA_ALLOC_CONF:\-expandable_segments:False\}"
+ADD \ \ \ \ \ \ VLLM_ALLOW_LONG_MAX_MODEL_LEN:\ "\$\{VLLM_ALLOW_LONG_MAX_MODEL_LEN:\-1\}"
+ADD \ \ \ \ \ \ TRITON_CACHE_DIR:\ "\$\{TRITON_CACHE_DIR:\-/root/\.triton/cache\}"
+ADD \ \ \ \ \ \ \#\ \-\-\ serve\ shape\ \(the\ machine\ \.env\ overrides\ these\)\ \-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-
+ADD \ \ \ \ \ \ KV_DTYPE:\ "\$\{KV_DTYPE:\-auto\}"
+ADD \ \ \ \ \ \ MAX_MODEL_LEN:\ "\$\{MAX_MODEL_LEN:\-229376\}"
+ADD \ \ \ \ \ \ GPU_MEMORY_UTILIZATION:\ "\$\{GPU_MEMORY_UTILIZATION:\-0\.95\}"
+ADD \ \ \ \ \ \ MAX_NUM_SEQS:\ "\$\{MAX_NUM_SEQS:\-2\}"
+ADD \ \ \ \ \ \ MAX_NUM_BATCHED_TOKENS:\ "\$\{MAX_NUM_BATCHED_TOKENS:\-4096\}"
+ADD \ \ \ \ \ \ TP:\ "\$\{TP:\-2\}"
+ADD \ \ \ \ \ \ PP:\ "\$\{PP:\-1\}"
+ADD \ \ \ \ \ \ CHAT_TEMPLATE:\ "\$\{CHAT_TEMPLATE:\-\}"
+ADD \ \ \ \ \ \ \#\ \-\-\ sampler\ row\ \(host\-interpolated\ into\ \-\-override\-generation\-config\)\ \-\-
+ADD \ \ \ \ \ \ TEMP:\ "\$\{TEMP:\-1\.0\}"
+ADD \ \ \ \ \ \ TOP_P:\ "\$\{TOP_P:\-0\.95\}"
+ADD \ \ \ \ \ \ TOP_K:\ "\$\{TOP_K:\-64\}"
+ADD \ \ \ \ \ \ MIN_P:\ "\$\{MIN_P:\-0\.0\}"
+ADD \ \ \ \ \ \ REPEAT_PENALTY:\ "\$\{REPEAT_PENALTY:\-1\.0\}"
+ADD \ \ \ \ \ \ \ \ source\ /etc/vllm\-patches/detect_nvlink\.sh

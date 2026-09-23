@@ -1,0 +1,9 @@
+# model-recipes package - LF discipline for the shipped yml/sh/env files.
+# The global core.autocrlf=true on this box rewrites CRLF on checkout; that
+# broke install-core.sh image parsing on a fresh box (CR in the docker ref).
+*.yml text eol=lf
+*.sh text eol=lf
+*.env text eol=lf
+*.txt text eol=lf
+*.py text eol=lf
+*.tgz binary

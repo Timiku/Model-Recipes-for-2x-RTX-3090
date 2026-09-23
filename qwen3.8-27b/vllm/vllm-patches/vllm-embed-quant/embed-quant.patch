@@ -1,0 +1,37 @@
+Route the token embedding table through vLLM's quantized-embedding path
+(CompressedTensorsEmbeddingWNA16Int). The kernel exists upstream; the qwen3_5
+model code just never passes quant_config to VocabParallelEmbedding. Two
+hunks: the main model (qwen3_5.py), and the MTP draft module
+(qwen3_5_mtp.py) — without the second one, boot dies with "no parameter
+named 'embed_tokens.weight_packed' in Qwen3_5Model".
+
+Upstream: syv-ai/HyperQwen patches/qwen3_5-embed-quant.patch (exported from
+cpuchip/vllm 4ef3da407, validated against vLLM 0.28.0). Re-anchored for the
+0.29.0 image here; same two hunks at the 0.29.0 line positions (the embed
+constructions are verbatim identical in 0.29.0; self.quant_config /
+vllm_config are in scope at both sites). Apply AFTER vllm-mtp-draft-vocab:
+that bundle inserts below the MTP embed block, this one inside it — this
+order matches both hunks exactly (no fuzz needed).
+
+--- re-anchored from cpuchip/vllm 4ef3da407 (qwen3_5-embed-quant) for the 0.29.0 rebase ---
+
+diff --git a/model_executor/models/qwen3_5.py b/model_executor/models/qwen3_5.py
+--- a/model_executor/models/qwen3_5.py
++++ b/model_executor/models/qwen3_5.py
+@@ -245,4 +245,6 @@
+         self.embed_tokens = VocabParallelEmbedding(
+             self.vocab_size,
+             config.hidden_size,
++            quant_config=self.quant_config,
++            prefix=maybe_prefix(prefix, "embed_tokens"),
+         )
+diff --git a/model_executor/models/qwen3_5_mtp.py b/model_executor/models/qwen3_5_mtp.py
+--- a/model_executor/models/qwen3_5_mtp.py
++++ b/model_executor/models/qwen3_5_mtp.py
+@@ -84,4 +84,6 @@
+         self.embed_tokens = VocabParallelEmbedding(
+             self.vocab_size,
+             config.hidden_size,
++            quant_config=vllm_config.quant_config,
++            prefix=maybe_prefix(prefix, "embed_tokens"),
+         )

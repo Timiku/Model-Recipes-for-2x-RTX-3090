@@ -1,0 +1,23 @@
+# auto-generated re-home manifest (parent body -> package body).
+#   gate: yml-provenance.py check --yml ../package/<tier>.yml
+#           --source ../baseline/<tier>.yml --manifest <this>
+DEL \ \ \ \ container_name:\ qwen38\-flashnext\-serve
+DEL \ \ \ \ \ \ \-\ "127\.0\.0\.1:\$\{PORT:\-8115\}:\$\{PORT:\-8115\}"
+DEL \ \ \ \ \ \ \-\ \$\{WEIGHTS_DIR:\?WEIGHTS_DIR\ unset\ \-\ set\ it\ in\ the\ recipe\ config\.env\}/\$\{TARGET_MODEL:\-qwen3\.8\-flash\-next\}:/model:ro
+DEL \ \ \ \ \ \ \-\ /dev/shm
+DEL \ \ \ \ \ \ \-\ CUDA_VISIBLE_DEVICES=\$\{DEVICE_PAIR:\-0,2\}
+ADD \ \ \ \ container_name:\ qwen38\-flashnext\-nomtp\-serve
+ADD \ \ \ \ \ \ \-\ "\$\{BIND_HOST:\-127\.0\.0\.1\}:\$\{PORT:\-8115\}:\$\{PORT:\-8115\}"
+ADD \ \ \ \ shm_size:\ "16gb"
+ADD \ \ \ \ \ \ \-\ \$\{WEIGHTS_DIR:\-\.\./\.\./weights\}/\$\{TARGET_MODEL:\-qwen3\.8\-flash\-next\}:/model:ro
+ADD \ \ \ \ \ \ \-\ CUDA_VISIBLE_DEVICES=\$\{DEVICE_PAIR:\-0,1\}
+ADD \ \ \ \ \ \ \-\ SAMPLER=\$\{SAMPLER:\-card\}
+ADD \ \ \ \ \ \ \-\ TEMP=\$\{TEMP:\-\}
+ADD \ \ \ \ \ \ \-\ TOP_P=\$\{TOP_P:\-\}
+ADD \ \ \ \ \ \ \-\ TOP_K=\$\{TOP_K:\-\}
+ADD \ \ \ \ \ \ \-\ MIN_P=\$\{MIN_P:\-\}
+ADD \ \ \ \ \ \ \-\ PRESENCE_PENALTY=\$\{PRESENCE_PENALTY:\-\}
+ADD \#\ {14}ladder\ is\ documented\ in\ the\ source\ recipe
+ADD \#\ \ \ Status:\ \ \ \ EXPERIMENTAL\ \-\ user\-gated\ \(the\ source\ test\ plan\ holds\ the
+DEL \#\ {14}ladder\ is\ in\ the\ wiki's\ recipe\ page
+DEL \#\ \ \ Status:\ \ \ \ EXPERIMENTAL\ \-\ user\-gated\ \(the\ wiki's\ test\ plan\ holds\ the

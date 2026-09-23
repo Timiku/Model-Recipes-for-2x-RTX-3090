@@ -1,0 +1,115 @@
+# vLLM #50021 (Site 2) — bound the mamba "align" pre-copy block-table columns.
+#
+# Re-anchored to the v0.29.0 base (the 0.29.0 rebase); the hunk context is
+# byte-identical to vllm/vllm-openai:v0.29.0's v1/worker/mamba_utils.py, so it
+# applies with no drift. Take only this file of the #50021 PR: it is the half
+# that protects the ALIGN pre-copy path (preprocess_state -> run_fused_precopy),
+# which is the one a drafter-OFF (SPEC_N=0) "nomtp" tier actually runs. The
+# sibling #50021 hunk in the recurrent kernels (Site 1) is MTP-only and is NOT
+# needed here.
+#
+# The bug (v0.29.0, unpatched): _copy_mamba_state_block copies one mamba state
+# block between two block-table columns of a request's block table. All four of
+# those column loads were UNBOUNDED:
+#     dest_block_id = tl.load(block_table_base + dst_col)
+#     src_block_id  = tl.load(block_table_base + src_col)            (DS conv)
+#     src_block_id  = tl.load(block_table_base + src_col)            (SD conv)
+#     actual_src_block_id = tl.load(block_table_base + src_col + token_bias)
+# where block_table_base = group_table + bt_row_idx * block_table_stride_req.
+# A request that RESUMES over a prefix-cache hit and is then batched with a
+# concurrent prefill can be handed a state column that lies outside its
+# allocated block-table row (the align pre-copy / shared-prefix bookkeeping
+# hands it a col the row doesn't contain). The unbounded load then reads an
+# arbitrary int32 from an adjacent row, multiplies it by state_block_stride (the
+# mamba page stride, which the code itself notes can exceed 2**31 bytes), and
+# tl.store()s to the resulting address — a wild write that faults the SM
+# (cudaErrorIllegalAddress / Xid 31) and kills the engine. That is exactly the
+# nomtp 2-concurrent deep-resume crash reproduced on the .57 box (200K resume +
+# a 100K prefill, both 500 -> EngineDeadError).
+#
+# The fix (this hunk): mask each column load to [0, block_table_stride_req) with
+# other=-1, then reject any loaded block id <= 0 (which covers both the -1
+# sentinel and NULL_BLOCK_ID=0, the unallocated-slot marker). An out-of-range
+# column therefore falls into the existing no-copy early-return instead of
+# producing an address. No stream-ordering change, no device sync.
+#
+# Relationship to the sibling bundles already on every mamba-align tier:
+#   - vllm-mamba-align-seed (#53142) fixes the SEED (add_request divided by the
+#     KV block size instead of the mamba block size). Necessary, but it only
+#     makes the running state index *sane*; it does not bound the COPY's column
+#     loads, which is why a bad column still reached the wild write.
+#   - vllm-syv-mamba-align-ckpts is an eviction-ORDER fix (TTFT spikes), a
+#     different file, no overlap with this.
+# This bundle is the missing third line: bound the copy itself.
+#
+# Apply from the installed vllm package dir:
+#   cd <.../vllm> && patch -p1 --forward --batch < 50021-mamba-copy-bounds.patch
+# (the tier's install.sh does this and refuses boot on any failure).
+
+--- a/v1/worker/mamba_utils.py
++++ b/v1/worker/mamba_utils.py
+@@ -175,7 +175,20 @@ def _copy_mamba_state_block(
+     # Widen block ids to int64 before they reach `block_id * state_block_stride`
+     # below: state_block_stride can exceed 2**31 bytes for large mamba caches,
+     # and Triton would otherwise do the multiply in int32 and wrap.
+-    dest_block_id = tl.load(block_table_base + dst_col).to(tl.int64)
++    # FIX I: the block-table columns below are derived from per-request
++    # accepted-token counts. A wrong count walks the read past this request's
++    # row; the loaded int32 is then multiplied by state_block_stride and
++    # dereferenced, so an out-of-range column becomes a wild (and possibly
++    # misaligned) address rather than merely a wrong copy. Bound the columns to
++    # the row: an out-of-range column loads the ``other=-1`` sentinel, and the
++    # ``<= 0`` guards below reject both that sentinel and ``NULL_BLOCK_ID`` (0,
++    # the unallocated-slot marker), so neither reaches the address math.
++    dst_col_ok = (dst_col >= 0) & (dst_col < block_table_stride_req)
++    dest_block_id = tl.load(block_table_base + dst_col, mask=dst_col_ok, other=-1).to(
++        tl.int64
++    )
++    if dest_block_id <= 0:
++        return
+     dst_addr = state_base_addr + dest_block_id * state_block_stride
+ 
+     is_conv_state = conv_width > 0
+@@ -186,7 +199,12 @@ def _copy_mamba_state_block(
+         if tile_idx > 0:
+             return
+         # DS conv layout: state_len is the slide axis; copy per dim row.
+-        src_block_id = tl.load(block_table_base + src_col).to(tl.int64)
++        src_col_ok = (src_col >= 0) & (src_col < block_table_stride_req)
++        src_block_id = tl.load(
++            block_table_base + src_col, mask=src_col_ok, other=-1
++        ).to(tl.int64)
++        if src_block_id <= 0:
++            return
+         dim_rows = tl.load(state_dim_row_count_ptr + state_idx)
+         row_stride = tl.load(state_dim_row_stride_ptr + state_idx)
+         src_block_addr = state_base_addr + src_block_id * state_block_stride
+@@ -237,7 +255,12 @@ def _copy_mamba_state_block(
+         # SD conv: copy
+         #   state[bt[src_col], token_bias:] ->
+         #   state[bt[dst_col], :conv_width - token_bias]
+-        src_block_id = tl.load(block_table_base + src_col).to(tl.int64)
++        src_col_ok = (src_col >= 0) & (src_col < block_table_stride_req)
++        src_block_id = tl.load(
++            block_table_base + src_col, mask=src_col_ok, other=-1
++        ).to(tl.int64)
++        if src_block_id <= 0:
++            return
+         src_block_addr = state_base_addr + src_block_id * state_block_stride
+         token_bytes = state_inner_size * state_elem_size
+         num_dst_tokens = conv_width - token_bias
+@@ -276,7 +299,13 @@ def _copy_mamba_state_block(
+     # Temporal state: copy state[bt[src_col + token_bias]] -> state[bt[dst_col]]
+     # Body u64 range is partitioned across TEMPORAL_TILES CTAs to keep the
+     # SMs filled at small batch.
+-    actual_src_block_id = tl.load(block_table_base + src_col + token_bias).to(tl.int64)
++    tmp_col = src_col + token_bias
++    tmp_col_ok = (tmp_col >= 0) & (tmp_col < block_table_stride_req)
++    actual_src_block_id = tl.load(
++        block_table_base + tmp_col, mask=tmp_col_ok, other=-1
++    ).to(tl.int64)
++    if actual_src_block_id <= 0:
++        return
+     src_addr = state_base_addr + actual_src_block_id * state_block_stride
+     # Use natural block data size (inner_size * elem_size), NOT
+     # state_block_stride which is the page stride and can exceed the

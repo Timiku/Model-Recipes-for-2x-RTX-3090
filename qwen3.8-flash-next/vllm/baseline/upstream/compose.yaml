@@ -1,0 +1,41 @@
+services:
+  qwen38-flash-next:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: qwen38-flash-next-2x3090:locked
+    container_name: qwen38-flash-next
+    gpus: all
+    ipc: host
+    cap_add:
+      - SYS_PTRACE
+    shm_size: 16gb
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    ports:
+      - "127.0.0.1:${PORT:-8000}:${PORT:-8000}"
+    environment:
+      PORT: "${PORT:-8000}"
+      VLLM_QSA_EXACT_TOPK: "${VLLM_QSA_EXACT_TOPK:-0}"
+      DISABLE_CUSTOM_ALL_REDUCE: "${DISABLE_CUSTOM_ALL_REDUCE:-1}"
+      PYTORCH_CUDA_ALLOC_CONF: "${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
+      SERVED_MODEL_NAME: "${SERVED_MODEL_NAME:-Qwen3.8-Flash-Next}"
+      MAX_MODEL_LEN: "${MAX_MODEL_LEN:-262144}"
+      MAX_NUM_BATCHED_TOKENS: "${MAX_NUM_BATCHED_TOKENS:-4096}"
+      MAX_PARALLEL_LOADING_WORKERS: "${MAX_PARALLEL_LOADING_WORKERS:-1}"
+      MAX_NUM_SEQS: "${MAX_NUM_SEQS:-1}"
+      KV_CACHE_MEMORY_BYTES: "${KV_CACHE_MEMORY_BYTES:-4429185024}"
+      CPU_OFFLOAD_GB: "${CPU_OFFLOAD_GB:-30}"
+      VLLM_PLE_OFFLOAD_READY_TIMEOUT: "${VLLM_PLE_OFFLOAD_READY_TIMEOUT:-1200}"
+      VLLM_WNA16_STATIC_HOT_CACHE_SIZE: "${VLLM_WNA16_STATIC_HOT_CACHE_SIZE:-84}"
+      VLLM_WNA16_STATIC_HOT_CACHE_MAX_TOKENS: "${VLLM_WNA16_STATIC_HOT_CACHE_MAX_TOKENS:-16}"
+      VLLM_PREFIX_CACHE_RETENTION_INTERVAL: "${VLLM_PREFIX_CACHE_RETENTION_INTERVAL:-1600}"
+      MTP_DEPTH: "${MTP_DEPTH:-3}"
+      ENABLE_VISION: "${ENABLE_VISION:-0}"
+      VISION_MAX_IMAGES: "${VISION_MAX_IMAGES:-1}"
+      VISION_MAX_PIXELS: "${VISION_MAX_PIXELS:-1048576}"
+    volumes:
+      - "${MODEL_DIR:?Set MODEL_DIR}:/model:ro"
+    command: ["/model"]
+    restart: unless-stopped
