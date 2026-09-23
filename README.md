@@ -24,14 +24,14 @@ Every model folder has the same shape:
 
 1. **WSL2, with a Linux distro in it.** If you don't have it: in a Windows terminal, `wsl --install`, then reboot. The scripts look for a distro named `Ubuntu`; if yours has another name (e.g. `Ubuntu-24.04`), set the env var `WSL_DISTRO` to that exact name (see Config). Docker and the nvidia container runtime go inside the distro — the installer does that part, not you.
 2. **The NVIDIA driver** WSL2 drives the GPUs straight through it; nothing gets installed inside the distro for the GPUs. From a Windows terminal, `nvidia-smi` should list both of your cards.
+3. **Git for Windows** — only to `git clone` this repo (the install itself never calls git; the distro brings its own). If you don't have it: [git-scm.com/download/win](https://git-scm.com/download/win).
+4. **Python on Windows** — only for the benchmark bats (`bench.bat` etc.; the route gate is stdlib python, no packages). Booting and serving never need it. If you don't have it: [python.org/downloads](https://www.python.org/downloads/) — install with "Add python.exe to PATH" ticked. Docker and the tiers supply their own python inside the image.
 
 The rest is setup, not install:
 
-3. **Two GPU cards.** The recipes pin a *pair* of cards (default: 0 and 1 — the common two-card layout). A board wired differently: set `DEVICE_PAIR` (below).
-4. **Disk for weights:** ~20 GB per model — flash-next is the outlier at ~121 GiB. The install downloads what's missing into the model's own `weights/` folder next to the recipe (the Windows side - the WSL distro stays lean), or a store path of your choice.
-5. **RAM:** the WSL2 VM needs **64 GB+** for the 27B (the 31B wants about the same): one line in `C:\Users\<you>\.wslconfig` — `memory=64GB` under `[wsl2]`, then `wsl --shutdown` once. Nothing here touches that file. **flash-next wants 128 GB+ host RAM** and swap >= 32 GB (64 recommended); its root doc carries the box requirements.
-6. **Git for Windows** — only to `git clone` this repo (the install itself never calls git; the distro brings its own). If you don't have it: [git-scm.com/download/win](https://git-scm.com/download/win).
-7. **Python on Windows** — only for the benchmark bats (`bench.bat` etc.; the route gate is stdlib python, no packages). Booting and serving never need it. If you don't have it: [python.org/downloads](https://www.python.org/downloads/) — install with "Add python.exe to PATH" ticked. Docker and the tiers supply their own python inside the image.
+5. **Two GPU cards.** The recipes pin a *pair* of cards (default: 0 and 1 — the common two-card layout). A board wired differently: set `DEVICE_PAIR` (below).
+6. **Disk for weights:** ~20 GB per model — flash-next is the outlier at ~121 GiB. The install downloads what's missing into the model's own `weights/` folder next to the recipe (the Windows side - the WSL distro stays lean), or a store path of your choice.
+7. **RAM:** the WSL2 VM needs **64 GB+** for the 27B (the 31B wants about the same): one line in `C:\Users\<you>\.wslconfig` — `memory=64GB` under `[wsl2]`, then `wsl --shutdown` once. Nothing here touches that file. **flash-next wants 128 GB+ host RAM** and swap >= 32 GB (64 recommended); its root doc carries the box requirements.
 
 No PowerShell execution-policy change or anything else on the system: every script that loads a PowerShell file carries its own per-invocation bypass, so a fresh box runs them as-is.
 
