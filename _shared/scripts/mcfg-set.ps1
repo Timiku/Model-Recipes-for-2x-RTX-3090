@@ -70,5 +70,10 @@ foreach ($p in $pairs) {
         $out.Add(($p[0] + '=') + (Format-EnvValue $p[1]))
     }
 }
-[System.IO.File]::WriteAllLines($File, $out)
+# LF endings, not platform default: this file is sourced by bash on the WSL
+# side (set -a; . file) and compose interpolates from it. CRLF would put a
+# literal \r into every value (BIND_HOST='0.0.0.0\r' -> 'invalid IP address').
+[System.IO.File]::WriteAllLines($File, $out, (New-Object System.Text.UTF8Encoding($false)))
+$lf = [IO.File]::ReadAllText($File) -replace "\r\n", "\n"
+[IO.File]::WriteAllText($File, $lf, (New-Object System.Text.UTF8Encoding($false)))
 exit 0

@@ -111,12 +111,16 @@ mkdir -p "$ROOT" 2>/dev/null || true
 # Read the machine .env into this shell's env (plain KEY=value,
 # shell-sourceable) so the package yml's ${KEY} interpolations take the box's
 # values; a stance/EXTRA file, when given, overrides the .env for this boot.
-set -a; [ -f "$CFG" ] && . "$CFG" 2>/dev/null; set +a
+# CRLF-safe: source from a temp LF copy. These files are edited on the
+# Windows side (mcfg-set, hand edits) and a CRLF line puts a literal \r into
+# every value ('BIND_HOST=0.0.0.0\r' -> compose 'invalid IP address').
+_env_lf() { sed 's/\r$//' "$1" > "$ROOT/.env.lf.$$"; echo "$ROOT/.env.lf.$$"; }
+_LF=$(_env_lf "$CFG"); set -a; [ -f "$_LF" ] && . "$_LF" 2>/dev/null; set +a; rm -f "$_LF"
 if [ -n "$EXTRA" ]; then
   [ -f "$EXTRA" ] || { echo "[up] FATAL: no extra env file $EXTRA" >&2
     echo "[up] $(date -u '+%F %T') FATAL: no extra env file $EXTRA" >> "$ROOT/boot-failure.log" 2>/dev/null || true
     exit 1; }
-  set -a; . "$EXTRA"; set +a
+  _LF=$(_env_lf "$EXTRA"); set -a; . "$_LF"; set +a; rm -f "$_LF"
   echo "[up] stance: $EXTRA (its vars override the .env for this boot)"
 fi
 ENVF=$CFG
