@@ -27,7 +27,7 @@ Every model folder has the same shape:
 
 | path | what it is |
 |---|---|
-| `MODEL.md` | The model card: tiers, ports, settings, measured speeds. Longer write-ups (A/B tests, boot-failure notes, tuning) live in the author's source repo, not here. |
+| `MODEL.md` | The model card: tiers, ports, settings, measured speeds. |
 | `vllm/install.bat` / `install.sh` | Checks prerequisites, asks three setup questions (which two GPUs, which network address to listen on, where the weights go), then sets up Docker, the runtime folder, the image and the weights. Missing weights are downloaded into the model's own `weights/` folder or a path you choose; where no download source is known, it prints the commands instead. |
 | `vllm/start-<tier>.bat` / `.sh` | One per tier. Boots the tier and shows its log. **Windows:** closing the window stops the tier; a watchdog shuts the WSL VM down when the server process dies. **Linux:** Ctrl-C only detaches from the log and the container keeps running; use `stop.sh`. There is no watchdog on Linux. |
 | `vllm/stop.bat` / `stop.sh` | Stops every tier of that model. |
