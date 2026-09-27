@@ -1,0 +1,170 @@
+# deltas/nomtp.txt  --  rebase manifest, auto-generated (pre-rebase body -> this body).
+#   DEL  = a line of the baseline body the rebase removes
+#   ADD  = a line the rebase adds to this body
+#   each pattern is the exact escaped line; re-run the generator to re-anchor
+#   gate: yml-provenance.py check  --yml ../package/nomtp.yml
+#           --source ../baseline/nomtp.yml  --manifest <this>
+
+DEL \#\ ===========================================================================
+DEL \ \ \ \ \ \ \-\ \.\./patches/w4a8\-int8\-act:/etc/club3090/w4a8:ro
+DEL \ \ \ \ \ \ \#\ Lets\ the\ MTP\ drafter\ attach\ on\ this\ hybrid\ \(mamba/eagle\ block\ drop\)\.
+DEL \ \ \ \ \ \ \-\ \.\./patches/vllm\-pr48375\-mamba\-drop\-eagle\-block:/etc/club3090/pr48375:ro
+ADD \ \ \ \ \ \ \-\ \.\./vllm\-patches/w4a8\-int8\-act:/etc/vllm\-patches/w4a8:ro
+DEL \ \ \ \ \ \ \-\ \.\./patches/vllm\-gdn\-mtp\-async\-spec\-order:/etc/club3090/gdn\-async\-order:ro
+DEL \ \ \ \ \ \ \-\ \.\./patches/vllm\-flashinfer\-decode\-pin:/etc/club3090/flashinfer\-decode\-pin:ro
+DEL \ \ \ \ \ \ \#\ syv\-ai\ xgrammar\ spec\-terminated\ patch\ \(09\-08;\ see\ README\)
+DEL \ \ \ \ \ \ \-\ \.\./patches/vllm\-syv\-xgrammar\-spec\-terminated:/etc/club3090/syv\-xgrammar:ro
+ADD \ \ \ \ \ \ \-\ \.\./vllm\-patches/vllm\-gdn\-mtp\-async\-spec\-order:/etc/vllm\-patches/gdn\-async\-order:ro
+ADD \ \ \ \ \ \ \-\ \.\./vllm\-patches/vllm\-flashinfer\-decode\-pin:/etc/vllm\-patches/flashinfer\-decode\-pin:ro
+DEL \ \ \ \ \ \ \-\ \.\./patches/vllm\-syv\-mamba\-align\-ckpts:/etc/club3090/syv\-mamba\-ckpts:ro
+DEL \ \ \ \ \ \ \-\ \.\./scripts/detect_nvlink\.sh:/etc/club3090/detect_nvlink\.sh:ro
+ADD \ \ \ \ \ \ \-\ \.\./vllm\-patches/vllm\-syv\-mamba\-align\-ckpts:/etc/vllm\-patches/syv\-mamba\-ckpts:ro
+ADD \ \ \ \ \ \ \#\ \#53142\ mamba\-align\ pre\-copy\ seed:\ seed\ the\ resumed\ mamba\ index\ by\ the\ mamba\ block\ size\ \(09\-11;\ see\ README\)
+ADD \ \ \ \ \ \ \-\ \.\./vllm\-patches/vllm\-mamba\-align\-seed:/etc/vllm\-patches/mamba\-align\-seed:ro
+ADD \ \ \ \ \ \ \-\ \.\./scripts/detect_nvlink\.sh:/etc/vllm\-patches/detect_nvlink\.sh:ro
+DEL \ \ \ \ \ \ \-\ \./templates:/templates:ro
+ADD \ \ \ \ \ \ \-\ \.\./templates:/templates:ro
+DEL \ \ \ \ \ \ \#\ Model\ selection\ —\ docker\ only\ forwards\ what\ is\ declared\ here;\ the
+DEL \ \ \ \ \ \ \#\ DEFAULT\ lives\ in\ the\ entrypoint\ \(the\ three\-way\ knob\ grammar\)\.
+DEL \ \ \ \ \ \ \-\ TARGET_MODEL=\$\{TARGET_MODEL:\-\}
+DEL \ \ \ \ \ \ \#\ Drafter\ toggle\ —\ docker\ only\ forwards\ what\ is\ declared\ here\.\ The\ DEFAULT
+DEL \ \ \ \ \ \ \#\ lives\ in\ the\ entrypoint,\ not\ in\ these\ lines,\ so\ it\ cannot\ drift\.
+DEL \ \ \ \ \ \ \-\ SPEC_N=\$\{SPEC_N:\-\}
+DEL \ \ \ \ \ \ \-\ SPEC=\$\{SPEC:\-\}
+DEL \ \ \ \ \ \ \#\ Sampler\ env\ passthrough\ \(\#984/\#1014\):\ the\ ENTRYPOINT\ —\ not\ compose
+DEL \ \ \ \ \ \ \#\ interpolation,\ which\ has\ no\ if/else\ —\ derives\ \-\-override\-generation\-config
+DEL \ \ \ \ \ \ \#\ from\ the\ model\-card\ row\ matching\ ENABLE_THINKING,\ so\ these\ must\ reach\ the
+DEL \ \ \ \ \ \ \#\ container\.\ Absent\ \->\ empty\ \->\ the\ entrypoint's\ `:=`\ row\ default\ applies;
+DEL \ \ \ \ \ \ \#\ an\ explicit\ value\ crosses\ unchanged\ and\ still\ wins\ over\ both\ rows\.
+DEL \ \ \ \ \ \ \-\ ENABLE_THINKING=true
+DEL \ \ \ \ \ \ \-\ TEMP=\$\{TEMP:\-\}
+DEL \ \ \ \ \ \ \-\ TOP_P=\$\{TOP_P:\-\}
+DEL \ \ \ \ \ \ \-\ TOP_K=\$\{TOP_K:\-\}
+DEL \ \ \ \ \ \ \-\ MIN_P=\$\{MIN_P:\-\}
+DEL \ \ \ \ \ \ \-\ PRESENCE_PENALTY=\$\{PRESENCE_PENALTY:\-\}
+DEL \ \ \ \ \ \ \-\ NVIDIA_VISIBLE_DEVICES=\$\{NVIDIA_VISIBLE_DEVICES:\-all\}
+DEL \ \ \ \ \ \ \-\ CUDA_VISIBLE_DEVICES=\$\{DEVICE_PAIR:\-0,1\}
+DEL \ \ \ \ \ \ \-\ CUDA_DEVICE_ORDER=PCI_BUS_ID
+DEL \ \ \ \ \ \ \-\ HUGGING_FACE_HUB_TOKEN=\$\{HF_TOKEN:\-\}
+DEL \ \ \ \ \ \ \-\ HF_HUB_OFFLINE=\$\{HF_HUB_OFFLINE:\-\$\{OFFLINE:\-0\}\}
+DEL \ \ \ \ \ \ \-\ TRANSFORMERS_OFFLINE=\$\{TRANSFORMERS_OFFLINE:\-\$\{OFFLINE:\-0\}\}
+DEL \ \ \ \ \ \ \-\ VLLM_WORKER_MULTIPROC_METHOD=spawn
+DEL \ \ \ \ \ \ \-\ NVLINK_MODE=\$\{NVLINK_MODE:\-auto\}
+DEL \ \ \ \ \ \ \-\ VLLM_SKIP_P2P_CHECK
+DEL \ \ \ \ \ \ \-\ NCCL_CUMEM_ENABLE=0
+DEL \ \ \ \ \ \ \-\ NCCL_P2P_DISABLE=\$\{NCCL_P2P_DISABLE:\-1\}
+DEL \ \ \ \ \ \ \#\ WSL2:\ vLLM\ keeps\ UVA/pinned\ memory\ OFF\ by\ default\ \(env\ default\ 0\)\.
+DEL \ \ \ \ \ \ \#\ The\ V2\ runner\ \(DFlash2\)\ requires\ UVA\ at\ RequestState\ init\ \->\ boot
+DEL \ \ \ \ \ \ \#\ crash\ without\ this\.\ Kernel\ 6\.x\ passes\ the\ pin\ gate\.
+DEL \ \ \ \ \ \ \-\ VLLM_WSL2_ENABLE_PIN_MEMORY=\$\{VLLM_WSL2_ENABLE_PIN_MEMORY:\-1\}
+DEL \ \ \ \ \ \ \-\ VLLM_NO_USAGE_STATS=1
+DEL \ \ \ \ \ \ \-\ VLLM_USE_FLASHINFER_SAMPLER=\$\{VLLM_USE_FLASHINFER_SAMPLER:\-0\}
+DEL \ \ \ \ \ \ \-\ OMP_NUM_THREADS=1
+DEL \ \ \ \ \ \ \-\ PYTORCH_CUDA_ALLOC_CONF=expandable_segments:False
+DEL \ \ \ \ \ \ \#\ ⭐\ W4A8\ \(int8\ activations\)\ SHIPS\ ON\ —\ set\ W4A8=0\ for\ the\ W4A16\ path\.
+DEL \ \ \ \ \ \ \-\ W4A8=\$\{W4A8:\-1\}
+DEL \ \ \ \ \ \ \#\ ⚠️⚠️\ WHY\ A\ SEPARATE\ BOOLEAN\ INSTEAD\ OF\ `\$\{VLLM_MARLIN_INPUT_DTYPE:\-int8\}`:
+DEL \ \ \ \ \ \ \#\ vLLM\ VALIDATES\ this\ variable\ against\ a\ closed\ set\ and\ raises\ on\ anything
+DEL \ \ \ \ \ \ \#\ else\ —\ INCLUDING\ THE\ EMPTY\ STRING:
+DEL \ \ \ \ \ \ \#\ \ \ ValueError:\ Invalid\ value\ ''\ for\ VLLM_MARLIN_INPUT_DTYPE\.
+DEL \ \ \ \ \ \ \#\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ Valid\ options:\ \['int8',\ 'fp8'\]\.
+DEL \ \ \ \ \ \ \#\ \(verified\ against\ the\ pinned\ image,\ 2026\-08\-16\)\.\ So\ there\ is\ NO\ value\ that
+DEL \ \ \ \ \ \ \#\ means\ "off"\ —\ only\ ABSENCE\ means\ off\.\ A\ `\$\{VAR:\-int8\}`\ default\ would\ make
+DEL \ \ \ \ \ \ \#\ W4A16\ unreachable:\ every\ attempt\ to\ disable\ it\ would\ either\ re\-substitute
+DEL \ \ \ \ \ \ \#\ int8\ or\ kill\ every\ worker\ at\ load_model\.\ Hence\ W4A8=0/1\ gates\ whether\ the
+DEL \ \ \ \ \ \ \#\ var\ is\ exported\ at\ all,\ and\ this\ stays\ a\ BARE\ pass\-through\ so\ an\ explicit
+DEL \ \ \ \ \ \ \#\ host\ value\ still\ wins\.
+DEL \ \ \ \ \ \ \-\ VLLM_MARLIN_INPUT_DTYPE
+ADD \ \ \ \ \ \ \#\ \-\-\ model\ \+\ drafter\ \(nomtp:\ drafter\ OFF\ by\ default\ —\ the\ mtp\ sibling\ keeps
+ADD \ \ \ \ \ \ \#\ \-\-\ sampler\ \(the\ ENTRYPOINT\ derives\ the\ row\ from\ ENABLE_THINKING\)\ \-\-\-\-
+ADD \ \ \ \ \ \ \#\ \-\-\ host\ /\ device\ \-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-
+ADD \ \ \ \ \ \ \#\ CUDA_VISIBLE_DEVICES\ is\ host\-interpolated\ from\ DEVICE_PAIR\ \(the\ boot
+ADD \ \ \ \ \ \ CUDA_VISIBLE_DEVICES:\ "\$\{DEVICE_PAIR:\-0,1\}"
+ADD \ \ \ \ \ \ \#\ WSL2\ UVA\ pin:\ the\ V2\ runner\ requires\ UVA\ at\ RequestState\ init\.
+ADD \ \ \ \ \ \ \#\ ⭐\ W4A8\ \(int8\ activations\)\ ships\ ON;\ the\ entrypoint's\ gate\ exports
+ADD \ \ \ \ \ \ \#\ VLLM_MARLIN_INPUT_DTYPE=int8\ only\ while\ it\ is\ unset\ and\ W4A8\ !=\ 0\.
+ADD \ \ \ \ \ \ \#\ \-\-\ prefix\-cache\ shaping\ \+\ serve\ shape\ \(host\-interpolated\)\ \-\-\-\-\-\-\-\-\-\-\-\-
+DEL \ \ \ \ \ \ \ \ source\ /etc/club3090/detect_nvlink\.sh
+ADD \ \ \ \ \ \ \ \ source\ /etc/vllm\-patches/detect_nvlink\.sh
+DEL \ \ \ \ \ \ \ \ bash\ /etc/club3090/w4a8/install\.sh
+DEL \ \ \ \ \ \ \ \ bash\ /etc/club3090/pr48375/install\.sh\ \|\|\ exit\ 1
+DEL \ \ \ \ \ \ \ \ bash\ /etc/club3090/gdn\-async\-order/install\.sh\ \|\|\ exit\ 1
+DEL \ \ \ \ \ \ \ \ FI_PINQ_LIB_ALL="\$\{FI_PINQ_LIB_ALL:\-0\}"\ bash\ /etc/club3090/flashinfer\-decode\-pin/install\.sh\ \|\|\ exit\ 1
+DEL \ \ \ \ \ \ \ \ \#\ syv\-ai\ xgrammar\ spec\-terminated\ installer\ \(refuses\ boot\ on\ drift\)
+DEL \ \ \ \ \ \ \ \ bash\ /etc/club3090/syv\-xgrammar/install\.sh\ \|\|\ exit\ 1
+ADD \ \ \ \ \ \ \ \ bash\ /etc/vllm\-patches/w4a8/install\.sh
+ADD \ \ \ \ \ \ \ \ bash\ /etc/vllm\-patches/gdn\-async\-order/install\.sh\ \|\|\ exit\ 1
+ADD \ \ \ \ \ \ \ \ FI_PINQ_LIB_ALL="\$\{FI_PINQ_LIB_ALL:\-0\}"\ bash\ /etc/vllm\-patches/flashinfer\-decode\-pin/install\.sh\ \|\|\ exit\ 1
+DEL \ \ \ \ \ \ \ \ bash\ /etc/club3090/syv\-mamba\-ckpts/install\.sh\ \|\|\ exit\ 1
+ADD \ \ \ \ \ \ \ \ bash\ /etc/vllm\-patches/syv\-mamba\-ckpts/install\.sh\ \|\|\ exit\ 1
+ADD \ \ \ \ \ \ \ \ \#\ \#53142\ installer\ \(refuses\ boot\ on\ drift;\ always\-on,\ no\ env\ gate\)
+ADD \ \ \ \ \ \ \ \ bash\ /etc/vllm\-patches/mamba\-align\-seed/install\.sh\ \|\|\ exit\ 1
+DEL \ \ \ \ \ \ \-\ \/templates\/\$\{CHAT_TEMPLATE\:\-chat_template\.jinja\}
+ADD \ \ \ \ \ \ \-\ \/templates\/\$\{CHAT_TEMPLATE\:\-froggeric\-v22\.5\.jinja\}
+ADD \ \ \ \ \ \ \#\ \⭐\ mamba\-block\-size\ 8192\ \(club\-3090\,\ measured\ 2026\-09\-04\;\ see\ mtp\.yml
+ADD \ \ \ \ \ \ \#\ for\ the\ full\ note\)\.\ 0\.29\.0\ has\ the\ flag\ natively\.\ MAMBA_BLOCK_SIZE\=0
+ADD \ \ \ \ \ \ \#\ disables\ \(upstream\ default\)\.
+ADD \ \ \ \ \ \ \#\ \⭐\ mamba\-block\-size\ \(club\-3090\ measured\;\ see\ env\ block\)\.\ 0\ disables\.
+ADD \ \ \ \ \ \ \-\ \-\-mamba\-block\-size
+ADD \ \ \ \ \ \ \-\ \"\$\{MAMBA_BLOCK_SIZE\:\-8192\}\"
+ADD \ \ \ \ \ \ \-\ \-\-compilation\-config
+ADD \ \ \ \ \ \ \-\ \'\{\"max_cudagraph_capture_size\"\:64\,\"custom_ops\"\:\[\"\+rms_norm\"\,\"\+silu_and_mul\"\]\}\'
+ADD \ \ \ \ \ \ \#\ \⭐\ compilation\-config\ \(syv\-ai\)\:\ fused\ custom\ ops\ \+\ a\ 64\-token\ graph\ cap\.
+ADD \ \ \ \ \ \ \-\ \.\.\/vllm\-patches\/vllm\-mamba\-copy\-bounds\:\/etc\/vllm\-patches\/mamba\-copy\-bounds\:ro
+ADD \ \ \ \ \ \ \ \ \#\ \#50021\ mamba\-copy\-bounds\ installer\ \(refuses\ boot\ on\ drift\;\ bounds\ the\ align\ pre\-copy\ columns\)
+ADD \ \ \ \ \ \ \ \ bash\ \/etc\/vllm\-patches\/mamba\-copy\-bounds\/install\.sh\ \|\|\ exit\ 1
+ADD \ \ \ \ \ \ \#\ \#50021\ mamba\-copy\-bounds\:\ bound\ the\ align\ pre\-copy\ block\-table\ columns\ \(the\ nomtp\ 2\-concurrent\ deep\-resume\ IMA\;\ see\ README\)
+DEL \ \ vllm\-qwen38\-27b\-dual\-fast\:
+ADD \ \ vllm\-qwen38\-27b\-dual\-kvarn\:
+DEL \ \ \ \ container_name\:\ qwen\-27b\-nomtp\-serve
+ADD \ \ \ \ container_name\:\ qwen\-27b\-kvarn\-serve
+DEL \ \ \ \ \ \ \-\ \"\$\{BIND_HOST\:\-0\.0\.0\.0\}\:\$\{PORT\:\-8113\}\:8000\"
+ADD \ \ \ \ \ \ \-\ \"\$\{BIND_HOST\:\-0\.0\.0\.0\}\:\$\{PORT\:\-8116\}\:8000\"
+DEL \ \ \ \ \ \ \-\ \"\$\{KV_CACHE_DTYPE\:\-fp8_e4m3\}\"
+ADD \ \ \ \ \ \ \-\ \"\$\{KV_CACHE_DTYPE\:\-kvarn_k4v2_g128\}\"
+ADD \ \ \ \ \ \ \#\ KVarN\ int4\ KV\-cache\ port\ \(huawei\-csl\,\ via\ cpuchip\'s\ port\-0\.29\;\ see\ the\ bundle\ README\)
+ADD \ \ \ \ \ \ \-\ \.\.\/\.\.\/\.\.\/_shared\/patches\/vllm\-kvarn\-0290\:\/etc\/vllm\-patches\/kvarn\:ro
+ADD \ \ \ \ \ \ \ \ \#\ KVarN\ bundle\ installer\ \(refuses\ boot\ on\ drift\;\ marker\ \+\ import\ verified\)
+ADD \ \ \ \ \ \ \ \ bash\ \/etc\/vllm\-patches\/kvarn\/install\.sh\ \|\|\ exit\ 1
+ADD \ \ \ \ \ \ \#\ \⭐\ KVarN\ tile\ size\:\ one\ vLLM\ block\ IS\ one\ KVarN\ tile\ \(g128\ preset\)\.
+ADD \ \ \ \ \ \ \-\ \-\-block\-size
+ADD \ \ \ \ \ \ \-\ \"\$\{BLOCK_SIZE\:\-128\}\"
+ADD \ \ \ \ \ \ \#\ \ \ \ the\ built\-in\ MTP\ head\ at\ n\=4\.\ The\ machine\ \.env\ overrides\ any\ of\ them\.\)\ \-\-
+ADD \ \ \ \ \ \ TARGET_MODEL\:\ \"\$\{TARGET_MODEL\:\-qwen3\.8\-27b\-autoround\-int4\}\"
+ADD \ \ \ \ \ \ SPEC_N\:\ \"\$\{SPEC_N\:\-0\}\"
+ADD \ \ \ \ \ \ SPEC\:\ \"\$\{SPEC\:\-\}\"
+ADD \ \ \ \ \ \ ENABLE_THINKING\:\ \"\$\{ENABLE_THINKING\:\-true\}\"
+ADD \ \ \ \ \ \ TEMP\:\ \"\$\{TEMP\:\-\}\"
+ADD \ \ \ \ \ \ TOP_P\:\ \"\$\{TOP_P\:\-\}\"
+ADD \ \ \ \ \ \ TOP_K\:\ \"\$\{TOP_K\:\-\}\"
+ADD \ \ \ \ \ \ MIN_P\:\ \"\$\{MIN_P\:\-\}\"
+ADD \ \ \ \ \ \ PRESENCE_PENALTY\:\ \"\$\{PRESENCE_PENALTY\:\-\}\"
+ADD \ \ \ \ \ \ \#\ exports\ it\ from\ the\ machine\ \.env\);\ the\ machine\ \.env\ sets\ DEVICE_PAIR\.
+ADD \ \ \ \ \ \ NVIDIA_VISIBLE_DEVICES\:\ \"\$\{NVIDIA_VISIBLE_DEVICES\:\-all\}\"
+ADD \ \ \ \ \ \ CUDA_DEVICE_ORDER\:\ \"\$\{CUDA_DEVICE_ORDER\:\-PCI_BUS_ID\}\"
+ADD \ \ \ \ \ \ HUGGING_FACE_HUB_TOKEN\:\ \"\$\{HUGGING_FACE_HUB_TOKEN\:\-\}\"
+ADD \ \ \ \ \ \ HF_HUB_OFFLINE\:\ \"\$\{HF_HUB_OFFLINE\:\-0\}\"
+ADD \ \ \ \ \ \ TRANSFORMERS_OFFLINE\:\ \"\$\{TRANSFORMERS_OFFLINE\:\-0\}\"
+ADD \ \ \ \ \ \ VLLM_WORKER_MULTIPROC_METHOD\:\ \"\$\{VLLM_WORKER_MULTIPROC_METHOD\:\-spawn\}\"
+ADD \ \ \ \ \ \ NVLINK_MODE\:\ \"\$\{NVLINK_MODE\:\-auto\}\"
+ADD \ \ \ \ \ \ VLLM_SKIP_P2P_CHECK\:\ \"\$\{VLLM_SKIP_P2P_CHECK\:\-\}\"
+ADD \ \ \ \ \ \ NCCL_CUMEM_ENABLE\:\ \"\$\{NCCL_CUMEM_ENABLE\:\-0\}\"
+ADD \ \ \ \ \ \ NCCL_P2P_DISABLE\:\ \"\$\{NCCL_P2P_DISABLE\:\-1\}\"
+ADD \ \ \ \ \ \ VLLM_WSL2_ENABLE_PIN_MEMORY\:\ \"\$\{VLLM_WSL2_ENABLE_PIN_MEMORY\:\-1\}\"
+ADD \ \ \ \ \ \ VLLM_NO_USAGE_STATS\:\ \"\$\{VLLM_NO_USAGE_STATS\:\-1\}\"
+ADD \ \ \ \ \ \ VLLM_USE_FLASHINFER_SAMPLER\:\ \"\$\{VLLM_USE_FLASHINFER_SAMPLER\:\-0\}\"
+ADD \ \ \ \ \ \ OMP_NUM_THREADS\:\ \"\$\{OMP_NUM_THREADS\:\-1\}\"
+ADD \ \ \ \ \ \ PYTORCH_CUDA_ALLOC_CONF\:\ \"\$\{PYTORCH_CUDA_ALLOC_CONF\:\-expandable_segments\:False\}\"
+ADD \ \ \ \ \ \ W4A8\:\ \"\$\{W4A8\:\-1\}\"
+ADD \ \ \ \ \ \ VLLM_MARLIN_INPUT_DTYPE\:\ \"\$\{VLLM_MARLIN_INPUT_DTYPE\:\-\}\"
+ADD \ \ \ \ \ \ MAMBA_CACHE_MODE\:\ \"\$\{MAMBA_CACHE_MODE\:\-align\}\"
+ADD \ \ \ \ \ \ PREFIX_MATCH_UNIT\:\ \"\$\{PREFIX_MATCH_UNIT\:\-16\}\"
+ADD \ \ \ \ \ \ MAMBA_BLOCK_SIZE\:\ \"\$\{MAMBA_BLOCK_SIZE\:\-8192\}\"
+ADD \ \ \ \ \ \ LONG_PREFILL_TOKEN_THRESHOLD\:\ \"\$\{LONG_PREFILL_TOKEN_THRESHOLD\:\-4096\}\"
+ADD \ \ \ \ \ \ KV_CACHE_DTYPE\:\ \"\$\{KV_CACHE_DTYPE\:\-kvarn_k4v2_g128\}\"
+ADD \ \ \ \ \ \ REASONING_EFFORT\:\ \"\$\{REASONING_EFFORT\:\-low\}\"
+ADD \ \ \ \ \ \ CHAT_TEMPLATE\:\ \"\$\{CHAT_TEMPLATE\:\-froggeric\-v22\.5\.jinja\}\"
+ADD \ \ \ \ \ \ MAX_MODEL_LEN\:\ \"\$\{MAX_MODEL_LEN\:\-262144\}\"
+ADD \ \ \ \ \ \ GPU_MEMORY_UTILIZATION\:\ \"\$\{GPU_MEMORY_UTILIZATION\:\-0\.90\}\"
+ADD \ \ \ \ \ \ MAX_NUM_SEQS\:\ \"\$\{MAX_NUM_SEQS\:\-2\}\"
+ADD \ \ \ \ \ \ MAX_NUM_BATCHED_TOKENS\:\ \"\$\{MAX_NUM_BATCHED_TOKENS\:\-4096\}\"
