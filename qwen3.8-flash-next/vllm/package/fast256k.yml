@@ -1,10 +1,10 @@
 # ===========================================================================
-# MODEL-RECIPES :: qwen3.8-flash-next / vllm / package :: mtp.yml
+# MODEL-RECIPES :: qwen3.8-flash-next / vllm / package :: nomtp.yml
 #
-# The two-tier package template for the MTP (the mtp head at depth 1; the proven arm) tier. The machine
+# The two-tier package template for the no-MTP (MTP_DEPTH=0 via the machine delta) tier. The machine
 # delta (mtp.env / nomtp.env, one folder up beside the bats)
 # is the only knob surface; at boot the start script composes them
-#   docker compose --env-file mtp.env -f package/mtp.yml
+#   docker compose --env-file nomtp.env -f package/nomtp.yml
 # (a key set in the .env wins; the package default stands otherwise).
 #
 # provenance-class: modified-image - this tier does NOT run a stock
@@ -26,25 +26,31 @@
 #              (the vendor-published line; baseline/upstream/repro.lock.json;
 #              the build that pins it: vllm/Dockerfile)
 #
-# Deltas (this body vs baseline/mtp.yml; enforced by
-#   _shared/scripts/yml-provenance.py check, manifest: ../deltas/mtp.txt)
+# Deltas (this body vs baseline/nomtp.yml; enforced by
+#   _shared/scripts/yml-provenance.py check, manifest: ../deltas/nomtp.txt)
 #   1. device:    the CUDA_VISIBLE_DEVICES default 0,2 -> 0,1 (the house
 #                seed pair; the machine delta's DEVICE_PAIR overrides it).
-#   2. weights:  the community's required WEIGHTS_DIR form -> the house
+#   2. name:      container_name qwen38-flashnext-serve ->
+#                qwen38-flashnext-nomtp-serve (each tier yml names its
+#                own literal; the drafter-off split itself is env -
+#                MTP_DEPTH=0 + the coupled retention interval - so it stays a
+#                machine-delta concern, exactly the old stance file's
+#                mechanism).
+#   3. weights:  the community's required WEIGHTS_DIR form -> the house
 #                defaulted form (blank machine delta = the model's own
 #                weights/ folder, the two-tier seed convention).
-#   3. shm:      the /dev/shm volume mount -> shm_size 16gb (tmpfs; the
+#   4. shm:      the /dev/shm volume mount -> shm_size 16gb (tmpfs; the
 #                PLE output buffers must page-lock - the t21 wall).
-#   4. profile:  RETIRED at the 09-17 re-pin - the upstream wrapper gained
+#   5. profile:  RETIRED at the 09-17 re-pin - the upstream wrapper gained
 #                its own ENABLE_VISION gate, so the tower is a machine-delta
 #                knob now (see <tier>.env); no body delta remains.
-#   5. sampler:  six pass-through lines (SAMPLER, TEMP, TOP_P, TOP_K,
+#   6. sampler:  six pass-through lines (SAMPLER, TEMP, TOP_P, TOP_K,
 #                MIN_P, PRESENCE_PENALTY) after PYTORCH_CUDA_ALLOC_CONF -
 #                the house sampler knob set the wrapper's LOCAL DELTA #3
 #                reads (serve-container.sh; rows: the Qwen3.8 family card).
 #                SAMPLER=card + blank knobs = no flag = the baseline's
 #                exact behavior. The machine delta owns the values.
-#   6. bind:     the vendor's pinned "127.0.0.1:PORT:PORT" ->
+#   7. bind:     the vendor's pinned "127.0.0.1:PORT:PORT" ->
 #                ${BIND_HOST:-127.0.0.1} interpolation: the SAME loopback
 #                pin is the default; the install wizard's bind step writes
 #                BIND_HOST into the machine delta (0.0.0.0 opens the distro
@@ -98,8 +104,8 @@
 # ---------------------------------------------------------------------------
 services:
   vllm-flashnext-2x3090:
-    image: ${VLLM_IMAGE:-qwen38-flash-next-2x3090:locked}
-    container_name: qwen38-flashnext-serve
+    image: ${VLLM_IMAGE:-ghcr.io/dominikbucko/qwen38-flash-next-2x3090:v0.3.0}
+    container_name: qwen38-flashnext-fast256k-serve
     restart: "no"
     ipc: host
     ulimits:
