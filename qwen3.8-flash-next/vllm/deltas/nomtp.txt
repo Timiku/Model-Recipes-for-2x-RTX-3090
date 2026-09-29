@@ -21,3 +21,18 @@ ADD \#\ {14}ladder\ is\ documented\ in\ the\ source\ recipe
 ADD \#\ \ \ Status:\ \ \ \ EXPERIMENTAL\ \-\ user\-gated\ \(the\ source\ test\ plan\ holds\ the
 DEL \#\ {14}ladder\ is\ in\ the\ wiki's\ recipe\ page
 DEL \#\ \ \ Status:\ \ \ \ EXPERIMENTAL\ \-\ user\-gated\ \(the\ wiki's\ test\ plan\ holds\ the
+# the 7 fast-256k env passthrough names (09-28, commit f656d14)
+ADD       - QWEN38_STREAM_STAGE=\$\{QWEN38_STREAM_STAGE:\-0\}
+ADD       - QWEN38_STREAM_STAGE_MIN_TOKENS=\$\{QWEN38_STREAM_STAGE_MIN_TOKENS:\-1536\}
+ADD       - QWEN38_STAGE_OVERLAP=\$\{QWEN38_STAGE_OVERLAP:\-0\}
+ADD       - QWEN38_ASYNC_SCHEDULING=\$\{QWEN38_ASYNC_SCHEDULING:\-0\}
+ADD       - QWEN38_TRITON_SKINNY=\$\{QWEN38_TRITON_SKINNY:\-0\}
+ADD       - QWEN38_PLE_PREFAULT=\$\{QWEN38_PLE_PREFAULT:\-0\}
+ADD       - DISABLE_CUSTOM_ALL_REDUCE=\$\{DISABLE_CUSTOM_ALL_REDUCE:\-1\}
+DEL \#   the 19\-name env pass\-through list \(PORT, VLLM_QSA_EXACT_TOPK,
+ADD \#   the 26\-name env pass\-through list \(the original 19: PORT, VLLM_QSA_EXACT_TOPK,
+DEL \#   VISION_MAX_IMAGES, VISION_MAX_PIXELS\); the /model mount
+ADD \#   VISION_MAX_IMAGES, VISION_MAX_PIXELS; plus the 7 fast\-256k names appended 09\-28:
+ADD \#   QWEN38_STREAM_STAGE, QWEN38_STREAM_STAGE_MIN_TOKENS, QWEN38_STAGE_OVERLAP,
+ADD \#   QWEN38_ASYNC_SCHEDULING, QWEN38_TRITON_SKINNY, QWEN38_PLE_PREFAULT,
+ADD \#   DISABLE_CUSTOM_ALL_REDUCE\); the /model mount
