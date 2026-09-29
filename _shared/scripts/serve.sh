@@ -40,8 +40,14 @@ ROOT=${MODEL_RECIPES_RT:-$HOME/model-recipes-rt}/$MODEL
 if ! grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null; then
   echo "[serve] native Linux: skipping the arm probe (a WSL2-only workaround)"
 else
-CFGE=$SRC/$MODEL/vllm/$TIER.env
-PAIR=$(sed -n "s/^DEVICE_PAIR=//p" "$CFGE" 2>/dev/null | head -n1 | sed "s/^['\"]//; s/['\"]\$//")
+# one precedence rule with up/down: the tierenv list, later file wins. The
+# trailing strip removes any stray \r (local files are Windows-created;
+# .gitattributes eol=lf does not cover untracked files).
+PAIR=""
+for _f in $(bash "$SRC/_shared/scripts/tierenv.sh" "$SRC/$MODEL/vllm" "$TIER"); do
+  _p=$(sed -n "s/^DEVICE_PAIR=['\"]\{0,1\}\(.*\)['\"]\{0,1\}\r\{0,1\}\$/\1/p" "$_f" 2>/dev/null | tr -d '\r' | head -n1)
+  [ -n "$_p" ] && PAIR="$_p"
+done
 PAIR=${PAIR:-0,1}
 IMG=$(sed -n 's/.*image:.*{VLLM_IMAGE:-\([^}]*\)}.*/\1/p' "$YML" | head -n1)
 IMG=${IMG:-$(sed -n 's/.*image:[[:space:]]*"\{0,1\}\([^"]*\).*/\1/p' "$YML" | head -n1)}

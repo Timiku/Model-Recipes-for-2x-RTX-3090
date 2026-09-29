@@ -3,3 +3,6 @@ __pycache__/
 run/
 logs/
 weights/
+
+# box-local tier overrides (t34: machine truth never ships)
+*.local.env

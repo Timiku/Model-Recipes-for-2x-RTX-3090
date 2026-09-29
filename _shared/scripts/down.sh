@@ -76,7 +76,7 @@ host_port() {
   local line
   line=$(awk '/^[[:space:]]*ports:/{f=1;next} f && /^[[:space:]]*-/{sub(/^[[:space:]]*-[[:space:]]*/,""); gsub(/"/,""); print; exit}' "$1")
   [ -n "$line" ] || return 0
-  ( set -a; [ -f "$2" ] && . "$2" 2>/dev/null; set +a; eval "SPEC=$line" 2>/dev/null; echo "${SPEC:-}" ) \
+  ( set -a; for _hf in $2; do [ -f "$_hf" ] && sed 's/\r$//' "$_hf" > "${_hf}.hf.lf" && . "${_hf}.hf.lf" 2>/dev/null && rm -f "${_hf}.hf.lf"; done; set +a; eval "SPEC=$line" 2>/dev/null; echo "${SPEC:-}" ) \
     | rev | cut -d: -f2 | rev
 }
 for y in $YMLS; do
@@ -95,11 +95,16 @@ for y in $YMLS; do
   MRPROJ="mr-$(echo "$MODEL" | tr '.' '-' | tr 'A-Z' 'a-z')"
   CF=(-p "$MRPROJ" -f "$y")
   CFG=$YMLROOT/../$STEM.env
+  # one precedence rule with up.sh: <tier>.env then <tier>.local.env (local
+  # wins) - the down render and the host_port resolution must see the same
+  # values the up booted with (a PORT override in the local file moves the
+  # release check; a DEVICE_PAIR override keeps the render identical)
+  CFGS=$(bash "$SRC/_shared/scripts/tierenv.sh" "$YMLROOT/.." "$STEM" 2>/dev/null || echo "$CFG")
   if [ -f "$CFG" ]; then
     # Compose renders inside the tier .env (--env-file, the same file up.sh
     # sources), contained in a subshell so one tier's knobs never leak
     # into the next yml's render; a failed stop prints its own error.
-    if COUT=$( ( set -a; [ -f "$CFG" ] && . "$CFG" 2>/dev/null; set +a; docker compose --env-file "$CFG" "${CF[@]}" down --remove-orphans --timeout 60 ) 2>&1 ); then
+    if COUT=$( ( ENVC2=(); set -a; for _f in $CFGS; do [ -f "$_f" ] && . "$_f" 2>/dev/null; done; set +a; for _f in $CFGS; do [ -f "$_f" ] && ENVC2+=(--env-file "$_f"); done; docker compose "${ENVC2[@]}" "${CF[@]}" down --remove-orphans --timeout 60 ) 2>&1 ); then
       stopped="compose"
     else
       printf '%s\n' "$COUT" | sed 's/^/    /' >&2
@@ -114,7 +119,7 @@ for y in $YMLS; do
   fi
   # Remember the host port for the release check (first ports: entry -
   # the API port; a tier's sidecar ports follow their container down).
-  HP=$(host_port "$y" "$CFG")
+  HP=$(host_port "$y" "$CFGS")
   [ -n "$HP" ] && PORTS="$PORTS $HP"
   # The name catch, unconditional (see the header): the pinned compose down
   # above exits 0 when its project holds nothing, so a name-holder of

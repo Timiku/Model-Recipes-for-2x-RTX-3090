@@ -115,7 +115,14 @@ mkdir -p "$ROOT" 2>/dev/null || true
 # Windows side (mcfg-set, hand edits) and a CRLF line puts a literal \r into
 # every value ('BIND_HOST=0.0.0.0\r' -> compose 'invalid IP address').
 _env_lf() { sed 's/\r$//' "$1" > "$ROOT/.env.lf.$$"; echo "$ROOT/.env.lf.$$"; }
-_LF=$(_env_lf "$CFG"); set -a; [ -f "$_LF" ] && . "$_LF" 2>/dev/null; set +a; rm -f "$_LF"
+# tier config, one precedence rule: <tier>.env then <tier>.local.env (local wins).
+# Source in emitted order (shell: later source overrides) AND pass to compose in
+# emitted order (compose: later --env-file wins). The two orders must stay
+# identical or the render test passes while the boot diverges.
+TIERENV_FILES=$(bash "$SRC/_shared/scripts/tierenv.sh" "$SRC/$MODEL/vllm" "$TIER")
+for _f in $TIERENV_FILES; do
+  _LF=$(_env_lf "$_f"); set -a; . "$_LF" 2>/dev/null; set +a; rm -f "$_LF"
+done
 if [ -n "$EXTRA" ]; then
   [ -f "$EXTRA" ] || { echo "[up] FATAL: no extra env file $EXTRA" >&2
     echo "[up] $(date -u '+%F %T') FATAL: no extra env file $EXTRA" >> "$ROOT/boot-failure.log" 2>/dev/null || true
@@ -213,8 +220,9 @@ if [ -n "$CARDS" ]; then
   THRESH=4000
   STABLE_TICKS=12
   DRAIN=900
-  [ -f "$ENVF" ] && DRAIN=$(sed -n "s/^[[:space:]]*UP_CARD_DRAIN_TIMEOUT[[:space:]]*=[[:space:]]*\([0-9][0-9]*\).*/\1/p" "$ENVF" | head -n1)
-  [ -n "$DRAIN" ] || DRAIN=900
+  # local-env aware: read the sourced shell value (the .local.env layer may
+  # override UP_CARD_DRAIN_TIMEOUT; a bare sed of $ENVF would miss it)
+  DRAIN=${UP_CARD_DRAIN_TIMEOUT:-900}
   TICK=${GATE_TICK:-5}
   declare -a PREV STABLE
   for i in "${!CARD_ARR[@]}"; do PREV[$i]=""; STABLE[$i]=0; done
@@ -291,7 +299,7 @@ fi
 # the old name). The .env's values are also in this shell's env, so the
 # ${KEY} forms interpolate identically on either path.
 ENVC=()
-[ -f "$CFG" ] && ENVC=(--env-file "$CFG")
+for _f in $TIERENV_FILES; do [ -f "$_f" ] && ENVC+=(--env-file "$_f"); done
 # H3: per-model compose project (mr-<model>) so one model's down --remove-orphans
 # can never sweep another model's container (all projects were 'package' before).
 MRPROJ="mr-$(echo "$MODEL" | tr '.' '-' | tr 'A-Z' 'a-z')"
@@ -372,8 +380,8 @@ fail() {
 # The probe window: 600 s by default; the tier's config file may raise it
 # (UP_PROBE_TIMEOUT) when a heavy model's first boot runs longer.
 PROBE=600
-[ -f "$ENVF" ] && PROBE=$(sed -n "s/^[[:space:]]*UP_PROBE_TIMEOUT[[:space:]]*=[[:space:]]*'\{0,1\}\([0-9][0-9]*\)'\{0,1\}.*/\1/p" "$ENVF" | head -n1)
-[ -n "$PROBE" ] || PROBE=600
+# local-env aware: the sourced shell value (a .local.env may override)
+PROBE=${UP_PROBE_TIMEOUT:-600}
 echo "[up] waiting for http://${PROBE_HOST}:${PORT}/v1/models (timeout ${PROBE}s)..."
 ready=0
 PROBE_START=$SECONDS
