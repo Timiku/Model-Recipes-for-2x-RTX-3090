@@ -109,8 +109,8 @@ if defined PAIR goto :dev-write
 if not defined PAIR_KEEP echo   GPU pair unchanged
 goto :dev-done
 :dev-write
-for %%T in (mtp nomtp) do powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0%%T.local.env" DEVICE_PAIR "!PAIR!" >nul
-echo   written DEVICE_PAIR=!PAIR! to both tier machine .local.envs
+for %%T in (mtp nomtp stock-mtp) do powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0%%T.local.env" DEVICE_PAIR "!PAIR!" >nul
+echo   written DEVICE_PAIR=!PAIR! to all three tier machine .local.envs
 goto :dev-done
 :dev-done
 rem ---- the serve bind: the raw address the tier binds to ----
@@ -145,8 +145,9 @@ echo   no address given - the standing bind is kept; nothing was written
 goto :bind-done
 :bind-write
 powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0mtp.local.env" BIND_HOST "!SB_VAL!" >nul
+powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0stock-mtp.local.env" BIND_HOST "!SB_VAL!" >nul
 powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0nomtp.local.env" BIND_HOST "!SB_VAL!" >nul
-echo   written BIND_HOST=!SB_VAL! to both tier machine .local.envs
+echo   written BIND_HOST=!SB_VAL! to all three tier machine .local.envs
 :bind-done
 rem ---- the firewall: the inbound rules for the tier ports live in     ----
 rem ---- firewall.bat in this folder - the one step that needs admin    ----
@@ -184,8 +185,44 @@ goto :wd-done
 :wd-write
 powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0mtp.local.env" WEIGHTS_DIR "!WD_VAL!" >nul
 powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0nomtp.local.env" WEIGHTS_DIR "!WD_VAL!" >nul
-echo   written WEIGHTS_DIR=!WD_VAL! to both tier machine .envs
+powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0stock-mtp.local.env" WEIGHTS_DIR "!WD_VAL!" >nul
+echo   written WEIGHTS_DIR=!WD_VAL! to all three tier machine .envs
 :wd-done
+rem ---- the checkpoint pick (step 2b): the target checkpoint the tiers load ----
+rem ---- TARGET_MODEL is tracked tier-env truth; the same value goes to     ----
+rem ---- every tier env. A bare name is a folder under WEIGHTS_DIR; a      ----
+rem ---- value containing / is an HF repo id - fetched on demand by        ----
+rem ---- package\weights-source.sh - or an absolute container path.        ----
+set "TM_STAND="
+for /f "delims=" %%A in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%MGET%" "%~dp0mtp.env" TARGET_MODEL 2^>nul') do set "TM_STAND=%%A"
+set "TM_VAL="
+echo.
+echo  checkpoint pick - the target checkpoint the tiers load:
+echo   1  qwen3.8-flash-next   albucino W4A16-FP8PLE, ~121 GiB - the shipped default,
+echo                           the community checkpoint the package is tuned around
+echo   h  a Hugging Face repo id       typed; fetched on demand - gated repos want HF_TOKEN exported
+echo   p  a provisioned folder         an absolute path, used verbatim
+if defined TM_STAND echo   standing pick: %TM_STAND%  ^(a re-run keeps it unless you change it^)
+set /p CP="  [enter] keep   [1] default   [h] hf repo id   [p] path: "
+if /i "!CP!"=="1" set "TM_VAL=qwen3.8-flash-next"
+if /i "!CP!"=="h" goto :cp-hf
+if /i "!CP!"=="p" goto :cp-path
+goto :cp-done
+:cp-hf
+set /p RID="  repo id (e.g. albucino/Qwen3.8-Flash-Next-W4A16-FP8PLE): "
+if defined RID set "TM_VAL=!RID!"
+goto :cp-done
+:cp-path
+set /p PP="  folder path (container-visible, e.g. /mnt/d/models/flash-next): "
+if defined PP set "TM_VAL=!PP!"
+goto :cp-done
+:cp-done
+if defined TM_VAL (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0mtp.env" TARGET_MODEL "!TM_VAL!" >nul
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0nomtp.env" TARGET_MODEL "!TM_VAL!" >nul
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0stock-mtp.env" TARGET_MODEL "!TM_VAL!" >nul
+    echo   written TARGET_MODEL=!TM_VAL! to all tier .envs
+)
 rem ---- stage 0: the WSL distro must exist (backstop) ----
 wsl -d %D% -- echo PING < nul >nul 2>nul
 if errorlevel 1 (

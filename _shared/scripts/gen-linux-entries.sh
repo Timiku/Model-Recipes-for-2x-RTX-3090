@@ -389,6 +389,38 @@ if [ "\${WD:0:1}" = "c" ] || [ "\${WD:0:1}" = "C" ]; then
   fi
 fi
 
+# The checkpoint pick (step 2b): which target checkpoint the tiers load.
+# TARGET_MODEL is tracked tier-env truth; the same value goes to every tier
+# env. A bare name is a folder under WEIGHTS_DIR; a value containing / is an
+# HF repo id (fetched on demand by package/weights-source.sh) or an absolute
+# container path, used verbatim.
+TM_STAND=\$(bash "\$MCFG" get "\$VDIR/${tiers%% *}.env" TARGET_MODEL 2>/dev/null || true)
+echo
+echo  checkpoint pick - the target checkpoint the tiers load:
+echo "   1  $CPICK_DEFAULT   $CPICK_DESC"
+echo "   h  a Hugging Face repo id       typed; fetched on demand (gated repos want HF_TOKEN exported)"
+echo "   p  a provisioned folder         an absolute path, used verbatim"
+if [ -n "\$TM_STAND" ]; then echo "  standing pick: \$TM_STAND  (a re-run keeps it unless you change it)"; fi
+printf '  [enter] keep   [1] default   [h] hf repo id   [p] path: '
+IFS= read -r CP || CP=""
+TM_VAL=""
+case "\$CP" in
+  1) TM_VAL="$CPICK_DEFAULT" ;;
+  h|H) printf '  repo id (e.g. $CPICK_HFEXAMPLE): '; IFS= read -r RID || RID="";
+       [ -n "\$RID" ] && TM_VAL=\$RID ;;
+  p|P) printf '  folder path (container-visible): '; IFS= read -r PP || PP="";
+       [ -n "\$PP" ] && TM_VAL=\$PP ;;
+esac
+if [ -n "\$TM_VAL" ]; then
+  ok=1
+  for t in $tiers; do bash "\$MCFG" set "\$VDIR/\$t.env" TARGET_MODEL "\$TM_VAL" || ok=0; done
+  if [ "\$ok" = 1 ]; then
+    echo "  written TARGET_MODEL=\$TM_VAL to all tier .envs"
+  else
+    echo "  WARNING: some tier .env writes failed - check TARGET_MODEL in each \$VDIR/<tier>.env" >&2
+  fi
+fi
+
 # ---- [3/3] the core install ----------------------------------------------
 echo
 bash "\$REPO/_shared/scripts/install-core.sh" \$MODEL
@@ -406,13 +438,14 @@ EOF
 # bat, so the two entry surfaces say the same thing.
 # =====================================================================
 
-# ---- qwen3.8-27b: 8 tiers (incl. the Swift pair and the KVarN trio) ----
-gen_install   qwen3.8-27b mtp nomtp superfast swift-mtp swift-nomtp kvarntier kvarndflash2 kvarnmtp
+# ---- qwen3.8-27b: 6 tiers (the KVarN trio + the fp8 trio; the Swift pair retired 09-29) ----
+CPICK_DEFAULT="qwen3.8-27b-autoround-int4"
+CPICK_DESC="Frozenlock AutoRound INT4, ~18 GiB - the shipped default, the working built-in MTP head"
+CPICK_HFEXAMPLE="Frozenlock/Qwen3.8-27B-int4-AutoRound"
+gen_install   qwen3.8-27b mtp nomtp superfast kvarntier kvarndflash2 kvarnmtp
 gen_start     qwen3.8-27b mtp 8113 qwen-27b-serve "stance: MTP - vllm/mtp.env carries SPEC_N=4 + the 09-08 window and seqs." "caveat: the drafter costs ~13% of the KV pool; #1096/#50021 both cut against sustained agent traffic." "the drafter-off tier is start-nomtp.sh: its own package yml + machine .env."
 gen_start     qwen3.8-27b nomtp 8113 qwen-27b-nomtp-serve "stance: MTP off - the plain tier, the fallback when the drafter cuts against the traffic."
 gen_start     qwen3.8-27b superfast 8104 qwen-27b-superfast-serve "stance: superfast - the speed-tuned tier."
-gen_start     qwen3.8-27b swift-mtp 8113 qwen-27b-swift-serve "stance: swift + MTP."
-gen_start     qwen3.8-27b swift-nomtp 8113 qwen-27b-swift-nomtp-serve "stance: swift, drafter off."
 gen_start     qwen3.8-27b kvarntier 8116 qwen-27b-kvarn-serve "stance: kvarn tier."
 gen_start     qwen3.8-27b kvarndflash2 8117 qwen-27b-kvarndflash2-serve "stance: dflash2 + w4a16."
 gen_start     qwen3.8-27b kvarnmtp 8116 qwen-27b-kvarnmtp-serve "stance: kvarn + MTP."
@@ -421,16 +454,23 @@ gen_bench     qwen3.8-27b 250000
 gen_bench_parallel qwen3.8-27b
 gen_uninstall qwen3.8-27b
 
-# ---- qwen3.8-flash-next: 2 tiers ----
-gen_install   qwen3.8-flash-next mtp nomtp
+# ---- qwen3.8-flash-next: 3 tiers (stock-mtp = the Stage-2 Step-1 mainline arm) ----
+CPICK_DEFAULT="qwen3.8-flash-next"
+CPICK_DESC="albucino W4A16-FP8PLE, ~121 GiB - the shipped default, the community checkpoint"
+CPICK_HFEXAMPLE="albucino/Qwen3.8-Flash-Next-W4A16-FP8PLE"
+gen_install   qwen3.8-flash-next mtp nomtp stock-mtp
 gen_start     qwen3.8-flash-next mtp 8115 qwen38-flashnext-serve "stance: MTP at depth 3 (variable-K scheduler) - the proven rung t24, 35.65 tok/s sustained:" "the 256,000 window, the 4.13 GiB KV pool, the 30 GiB/rank expert offload, 84 hot LRU slots." "the drafter-off tier is start-nomtp.sh - port 8116."
 gen_start     qwen3.8-flash-next nomtp 8116 qwen38-flashnext-nomtp-serve "stance: MTP off - the drafter-off sibling."
+gen_start     qwen3.8-flash-next stock-mtp 8119 qwen38-flashnext-stock-mtp-serve "stance: the stock-vllm mtp arm - the cu129-nightly image, no vendor overlay; the Stage-2 Step-1 mainline lane."
 gen_stop      qwen3.8-flash-next
 gen_bench     qwen3.8-flash-next 250000
 gen_bench_parallel qwen3.8-flash-next
 gen_uninstall qwen3.8-flash-next
 
 # ---- gemma4-31b: 2 tiers ----
+CPICK_DEFAULT="gemma-4-31b-qat-awq-int4"
+CPICK_DESC="cyankiwi QAT AWQ INT4, ~18 GiB - the shipped default"
+CPICK_HFEXAMPLE="cyankiwi/gemma-4-31B-it-AWQ-4bit"
 gen_install   gemma4-31b gemma-dual gemma-dual-nomtp
 gen_start     gemma4-31b gemma-dual 8032 gemma-serve "stance: MTP drafter arm ON by default (SPEC_N=2); set SPEC_N=0 in its config to kill it." "every other tier on this box pins the same two cards - park them before this boot."
 gen_start     gemma4-31b gemma-dual-nomtp 8033 gemma-serve-nomtp "stance: MTP off - the drafter-off sibling."

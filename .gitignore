@@ -6,3 +6,10 @@ weights/
 
 # box-local tier overrides (t34: machine truth never ships)
 *.local.env
+
+# agent-to-agent handoff scratch (session records live in the wiki)
+.claude-handoff/
+handoff/
+
+# the bump-aware install manifest (stage 5 regenerates it; machine state)
+INSTALL.json

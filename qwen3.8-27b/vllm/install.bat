@@ -9,7 +9,7 @@ for /f "tokens=1,2 delims==" %%I in ('powershell -NoProfile -ExecutionPolicy Byp
 set "D=Ubuntu"
 if defined WSL_DISTRO set "D=%WSL_DISTRO%"
 set "MODEL=qwen3.8-27b"
-rem The seven tier machine .envs this model's wizard keeps in step (two-tier
+rem The six tier machine .envs this model's wizard keeps in step (two-tier
 rem config: the box's DEVICE_PAIR / BIND_HOST / WEIGHTS_DIR live here, beside the
 rem bats; the package templates in vllm\package\ are applied silently at boot).
 set "MCFG=%REPO%\_shared\scripts\mcfg-set.ps1"
@@ -105,7 +105,7 @@ if defined PAIR goto :dev-write
 if not defined PAIR_KEEP echo   GPU pair unchanged
 goto :dev-done
 :dev-write
-for %%T in (mtp nomtp superfast swift-mtp swift-nomtp kvarntier kvarndflash2 kvarnmtp) do powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0%%T.env" DEVICE_PAIR "!PAIR!" >nul
+for %%T in (mtp nomtp superfast kvarntier kvarndflash2 kvarnmtp) do powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0%%T.env" DEVICE_PAIR "!PAIR!" >nul
 echo   written DEVICE_PAIR=!PAIR! to all tier machine .envs
 goto :dev-done
 :dev-done
@@ -144,7 +144,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0superfast.env
 powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0kvarntier.env" BIND_HOST "!SB_VAL!" >nul
 powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0kvarndflash2.env" BIND_HOST "!SB_VAL!" >nul
 powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0kvarnmtp.env" BIND_HOST "!SB_VAL!" >nul
-echo   written BIND_HOST=!SB_VAL! to all seven tier machine .envs
+echo   written BIND_HOST=!SB_VAL! to all six tier machine .envs
 :bind-done
 rem ---- the firewall: the inbound rules for the tier ports live in     ----
 rem ---- firewall.bat in this folder - the one step that needs admin    ----
@@ -184,8 +184,46 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0superfast.env
 powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0kvarntier.env" WEIGHTS_DIR "!WD_VAL!" >nul
 powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0kvarndflash2.env" WEIGHTS_DIR "!WD_VAL!" >nul
 powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0kvarnmtp.env" WEIGHTS_DIR "!WD_VAL!" >nul
-echo   written WEIGHTS_DIR=!WD_VAL! to all seven tier machine .envs
+echo   written WEIGHTS_DIR=!WD_VAL! to all six tier machine .envs
 :wd-done
+rem ---- the checkpoint pick (step 2b): the target checkpoint the tiers load ----
+rem ---- the same TARGET_MODEL goes to every tier env - the fp8 and KVarN   ----
+rem ---- shapes share the checkpoint. A bare name is a folder under        ----
+rem ---- WEIGHTS_DIR; a value containing / is an HF repo id (fetched on    ----
+rem ---- demand by weights-source.sh) or an absolute container path.       ----
+set "TM_STAND="
+for /f "delims=" %%A in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%MGET%" "%~dp0mtp.env" TARGET_MODEL 2^>nul') do set "TM_STAND=%%A"
+set "TM_VAL="
+echo.
+echo  checkpoint pick - the target checkpoint the tiers load:
+echo   1  qwen3.8-27b-autoround-int4   Frozenlock AutoRound INT4, ~18 GiB - the shipped default,
+echo                                   working built-in MTP head, the checkpoint the package is tuned around
+echo   h  a Hugging Face repo id       typed; fetched on demand - gated repos want HF_TOKEN exported
+echo   p  a provisioned folder         an absolute path, used verbatim
+if defined TM_STAND echo   standing pick: %TM_STAND%  ^(a re-run keeps it unless you change it^)
+set /p CP="  [enter] keep   [1] default   [h] hf repo id   [p] path: "
+if /i "!CP!"=="1" set "TM_VAL=qwen3.8-27b-autoround-int4"
+if /i "!CP!"=="h" goto :cp-hf
+if /i "!CP!"=="p" goto :cp-path
+goto :cp-done
+:cp-hf
+set /p RID="  repo id (e.g. Frozenlock/Qwen3.8-27B-int4-AutoRound): "
+if defined RID set "TM_VAL=!RID!"
+goto :cp-done
+:cp-path
+set /p PP="  folder path (container-visible, e.g. /mnt/d/models/qwen27b-int4): "
+if defined PP set "TM_VAL=!PP!"
+goto :cp-done
+:cp-done
+if defined TM_VAL (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0mtp.env" TARGET_MODEL "!TM_VAL!" >nul
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0nomtp.env" TARGET_MODEL "!TM_VAL!" >nul
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0superfast.env" TARGET_MODEL "!TM_VAL!" >nul
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0kvarntier.env" TARGET_MODEL "!TM_VAL!" >nul
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0kvarndflash2.env" TARGET_MODEL "!TM_VAL!" >nul
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0kvarnmtp.env" TARGET_MODEL "!TM_VAL!" >nul
+    echo   written TARGET_MODEL=!TM_VAL! to all six tier machine .envs
+)
 rem ---- stage 0: the WSL distro must exist (backstop) ----
 wsl -d %D% -- echo PING < nul >nul 2>nul
 if errorlevel 1 (

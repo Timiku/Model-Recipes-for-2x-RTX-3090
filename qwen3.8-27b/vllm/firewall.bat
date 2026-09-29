@@ -9,7 +9,7 @@ rem ---- changes nothing on the box. Idempotent - a rule that is already  ----
 rem ---- in place is reported, not re-added.                              ----
 rem ---- adds carry profile=any: an unscoped rule goes silent when the   ----
 rem ---- box's network profile rotates - this box's original rules did.  ----
-rem ---- the port list is the shipped tiers: 8113 mtp/nomtp/swift, ----
+rem ---- the port list is the shipped tiers: 8113 mtp/nomtp, ----
 rem ---- 8116 kvarntier/kvarnmtp, 8117 kvarndflash2.               ----
 set "MODEL=qwen3.8-27b"
 set "PORTS=8113 8116 8117"

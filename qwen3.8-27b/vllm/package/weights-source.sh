@@ -72,11 +72,23 @@ HF_BIN=$(command -v hf || command -v huggingface-cli)
 rc=0
 for slot in "$@"; do
   case "$slot" in
-    target)  SRC=$SRC_target;  DEST=$DEST_target ;;
+    target)  SRC=$SRC_target;  DEST=$DEST_target
+             # The wizard's checkpoint pick (step 2b): a TARGET_MODEL that is
+             # itself an HF repo id (contains / and is not the default folder
+             # name) is fetched as-is. A bare name is a folder under
+             # WEIGHTS_DIR fetched from the default repo; an absolute path is
+             # provisioned by hand (stage 4 reports it, nothing fetched here).
+             case "$DEST_target" in
+               /*) : ;;  # an absolute path: provisioned by hand, never fetched
+               */*) if [ "$DEST_target" != "$SRC_target" ]; then SRC=$DEST_target; fi ;;
+             esac ;;
     drafter) SRC=$SRC_drafter; DEST=$DEST_drafter ;;
     *) echo "      unknown missing slot: $slot"; rc=1; continue ;;
   esac
-  DEST="$WEIGHTS_DIR/$DEST"
+  case "$DEST" in
+    /*) : ;;  # already absolute (the path pick): use verbatim
+    *) DEST="$WEIGHTS_DIR/$DEST" ;;
+  esac
   echo "      $slot: hf download $SRC"
   echo "            -> $DEST   (resume-safe; a re-run continues partial files)"
   if "$HF_BIN" download "$SRC" --local-dir "$DEST"; then

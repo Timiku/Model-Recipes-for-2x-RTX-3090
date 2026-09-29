@@ -9,7 +9,7 @@ set -u
 MODEL=qwen3.8-flash-next
 VDIR=$REPO/$MODEL/vllm
 MCFG="$REPO/_shared/scripts/mcfg.sh"
-TIERS="mtp nomtp"
+TIERS="mtp nomtp stock-mtp"
 
 echo ============================================================
 echo " model-recipes install: $MODEL (native Linux)"
@@ -58,16 +58,13 @@ echo "  [ok] prereqs"
 echo
 echo " device pair - the two cards every tier runs on (tensor-parallel-2"
 echo " needs both). Standing pair:"
-# machine keys go to <tier>.local.env (gitignored, box truth) - the tracked
-# .env keeps only shipping defaults; writing the tracked file re-creates the
-# t34 hazard class (a box value leaking into commits, or re-pinning hardware)
 PAIR_STAND=$(bash "$MCFG" get "$VDIR/mtp.local.env" DEVICE_PAIR 2>/dev/null || bash "$MCFG" get "$VDIR/mtp.env" DEVICE_PAIR 2>/dev/null || true)
 if [ -n "$PAIR_STAND" ]; then echo "  $PAIR_STAND  (a re-run keeps it unless you change it)"; else echo "  none set yet - the package default is 0,1"; fi
 PICK=$(bash "$REPO/_shared/scripts/pickpair.sh" | tail -n1) || true
 if [ -n "${PICK:-}" ] && [ "$PICK" != "PAIR_KEEP=1" ]; then
   PAIR=${PICK#PAIR=}
   ok=1
-  for t in mtp nomtp; do bash "$MCFG" set "$VDIR/$t.local.env" DEVICE_PAIR "$PAIR" || ok=0; done
+  for t in mtp nomtp stock-mtp; do bash "$MCFG" set "$VDIR/$t.local.env" DEVICE_PAIR "$PAIR" || ok=0; done
   if [ "$ok" = 1 ]; then
     echo "  written DEVICE_PAIR=$PAIR to all tier machine .local.envs"
   else
@@ -76,7 +73,7 @@ if [ -n "${PICK:-}" ] && [ "$PICK" != "PAIR_KEEP=1" ]; then
 fi
 
 # The serve bind.
-BIND_STAND=$(bash "$MCFG" get "$VDIR/mtp.local.env" BIND_HOST 2>/dev/null || bash "$MCFG" get "$VDIR/mtp.env" BIND_HOST 2>/dev/null || true)
+BIND_STAND=$(bash "$MCFG" get "$VDIR/mtp.env" BIND_HOST 2>/dev/null || true)
 echo
 echo  serve bind - the address the tier binds to when it is up:
 echo "   0.0.0.0    every interface (the package default; the LAN reaches it)"
@@ -92,8 +89,8 @@ case "$SB" in
   *) SB_VAL="" ;;
 esac
 if [ -n "$SB_VAL" ]; then
-  for t in mtp nomtp; do bash "$MCFG" set "$VDIR/$t.local.env" BIND_HOST "$SB_VAL"; done
-  echo "  written BIND_HOST=$SB_VAL to all tier machine .local.envs"
+  for t in mtp nomtp stock-mtp; do bash "$MCFG" set "$VDIR/$t.env" BIND_HOST "$SB_VAL"; done
+  echo "  written BIND_HOST=$SB_VAL to all tier machine .envs"
 fi
 
 # The firewall note (the bat's firewall.bat step; one manual line here).
@@ -111,7 +108,7 @@ else
 fi
 
 # The weights path.
-WD_STAND=$(bash "$MCFG" get "$VDIR/mtp.local.env" WEIGHTS_DIR 2>/dev/null || bash "$MCFG" get "$VDIR/mtp.env" WEIGHTS_DIR 2>/dev/null || true)
+WD_STAND=$(bash "$MCFG" get "$VDIR/mtp.env" WEIGHTS_DIR 2>/dev/null || true)
 echo
 echo  weights download path - install-core verifies the weight folders here
 if [ -n "$WD_STAND" ]; then echo "  standing path: $WD_STAND  (a re-run keeps it unless you change it)"; else echo "  no path set yet - stage 4 falls back to the model's own weights folder"; fi
@@ -121,8 +118,40 @@ if [ "${WD:0:1}" = "c" ] || [ "${WD:0:1}" = "C" ]; then
   printf '  path (a Linux path, e.g. /home/<user>/models): '
   IFS= read -r WDPATH || WDPATH=""
   if [ -n "$WDPATH" ]; then
-    for t in mtp nomtp; do bash "$MCFG" set "$VDIR/$t.local.env" WEIGHTS_DIR "$WDPATH"; done
-    echo "  written WEIGHTS_DIR=$WDPATH to all tier machine .local.envs"
+    for t in mtp nomtp stock-mtp; do bash "$MCFG" set "$VDIR/$t.env" WEIGHTS_DIR "$WDPATH"; done
+    echo "  written WEIGHTS_DIR=$WDPATH to all tier machine .envs"
+  fi
+fi
+
+# The checkpoint pick (step 2b): which target checkpoint the tiers load.
+# TARGET_MODEL is tracked tier-env truth; the same value goes to every tier
+# env. A bare name is a folder under WEIGHTS_DIR; a value containing / is an
+# HF repo id (fetched on demand by package/weights-source.sh) or an absolute
+# container path, used verbatim.
+TM_STAND=$(bash "$MCFG" get "$VDIR/mtp.env" TARGET_MODEL 2>/dev/null || true)
+echo
+echo  checkpoint pick - the target checkpoint the tiers load:
+echo "   1  qwen3.8-flash-next   albucino W4A16-FP8PLE, ~121 GiB - the shipped default, the community checkpoint"
+echo "   h  a Hugging Face repo id       typed; fetched on demand (gated repos want HF_TOKEN exported)"
+echo "   p  a provisioned folder         an absolute path, used verbatim"
+if [ -n "$TM_STAND" ]; then echo "  standing pick: $TM_STAND  (a re-run keeps it unless you change it)"; fi
+printf '  [enter] keep   [1] default   [h] hf repo id   [p] path: '
+IFS= read -r CP || CP=""
+TM_VAL=""
+case "$CP" in
+  1) TM_VAL="qwen3.8-flash-next" ;;
+  h|H) printf '  repo id (e.g. albucino/Qwen3.8-Flash-Next-W4A16-FP8PLE): '; IFS= read -r RID || RID="";
+       [ -n "$RID" ] && TM_VAL=$RID ;;
+  p|P) printf '  folder path (container-visible): '; IFS= read -r PP || PP="";
+       [ -n "$PP" ] && TM_VAL=$PP ;;
+esac
+if [ -n "$TM_VAL" ]; then
+  ok=1
+  for t in mtp nomtp stock-mtp; do bash "$MCFG" set "$VDIR/$t.env" TARGET_MODEL "$TM_VAL" || ok=0; done
+  if [ "$ok" = 1 ]; then
+    echo "  written TARGET_MODEL=$TM_VAL to all tier .envs"
+  else
+    echo "  WARNING: some tier .env writes failed - check TARGET_MODEL in each $VDIR/<tier>.env" >&2
   fi
 fi
 

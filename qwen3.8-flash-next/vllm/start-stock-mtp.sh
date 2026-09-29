@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# start-swift-mtp.sh - the native-Linux twin of start-swift-mtp.bat: the banner,
+# start-stock-mtp.sh - the native-Linux twin of start-stock-mtp.bat: the banner,
 # the port preflight, then serve.sh (which boots the tier and tails its
 # log; Ctrl-C detaches, the container keeps running). The Windows bat's
 # watchdog has no native role - there is no WSL distro to keep warm and no
 # relay to babysit; the foreground tail IS the window.
 set -eu
 . "$(dirname -- "$0")/../../_shared/scripts/reporoot.sh"
-MODEL=qwen3.8-27b
-TIER=swift-mtp
-YML=swift-mtp.yml
-PORT=8113
-CNAME=qwen-27b-swift-serve
+MODEL=qwen3.8-flash-next
+TIER=stock-mtp
+YML=stock-mtp.yml
+PORT=8119
+CNAME=qwen38-flashnext-stock-mtp-serve
 
 echo ============================================================
 echo  serve: $MODEL / $YML, the $TIER tier
 echo  port $PORT, container $CNAME
 echo  stance notes:
-echo  stance: swift + MTP.
+echo " stance: the stock-vllm mtp arm - the cu129-nightly image, no vendor overlay; the Stage-2 Step-1 mainline lane."
 
 echo ============================================================
 echo

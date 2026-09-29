@@ -8,7 +8,7 @@
 |---|---|
 | **2× RTX 3090 (24 GB)** | Every tier runs tensor-parallel across both cards. One card is not enough: the ~18 GiB INT4 checkpoint plus a KV pool won't fit in 24 GB. |
 | **64 GB+ host RAM** | No expert offload on this model; host RAM covers weight loading and serving overhead. |
-| **~40 GB free disk** | Weights ~18 GiB, plus ~1.2 GiB for the external DFlash2 drafter (superfast and kvarndflash2 tiers), plus ~9 GB for the image. The Swift tiers need their own ~15 GB checkpoint on top. |
+| **~40 GB free disk** | Weights ~18 GiB, plus ~1.2 GiB for the external DFlash2 drafter (superfast and kvarndflash2 tiers), plus ~9 GB for the image. |
 | **WSL2 + the Windows NVIDIA driver** (Windows) | `install.bat` checks for them, and installs Docker Engine and the NVIDIA container runtime inside the distro if they are missing. |
 
 ## Tiers
@@ -20,8 +20,6 @@ All tiers run the stock vLLM v0.29.0 image with patch bundles mounted at boot. O
 | `start-mtp` | fp8 | built-in MTP, n=4 | 8113 | 2 | `qwen-27b-serve` |
 | `start-nomtp` | fp8 | off (`SPEC_N=0`) | 8113 | 2 | `qwen-27b-nomtp-serve` |
 | `start-superfast` | fp8 | external DFlash2 (1.2 GB W4A16), n=7 | 8104 | 1 | `qwen-27b-superfast-serve` |
-| `start-swift-mtp` | fp8 | the Swift checkpoint's own MTP head, n=4 | 8113 | 2 | `qwen-27b-swift-serve` |
-| `start-swift-nomtp` | fp8 | off | 8113 | 2 | `qwen-27b-swift-nomtp-serve` |
 | `start-kvarntier` | KVarN int4 | off | 8116 | 2 | `qwen-27b-kvarn-serve` |
 | `start-kvarnmtp` | KVarN int4 | built-in MTP, n=4 | 8116 | 4 | `qwen-27b-kvarnmtp-serve` |
 | `start-kvarndflash2` | KVarN int4 | external DFlash2, n=7 | 8117 | 1 | `qwen-27b-kvarndflash2-serve` |
@@ -32,7 +30,9 @@ The start script refuses to boot while a card holds more than 4 GB. Four tiers s
 
 **KV precision and GPU generation.** The fp8-KV tiers (`mtp`, `nomtp`, `superfast`) use FlashInfer's quantized paged path, which needs SM90+. On Ampere (SM86, the 3090 class), FlashAttention and fp8 KV can't be combined, and FlashInfer's paged prefill under MTP hits an upstream fault with no merged SM86 fix. The KVarN tiers avoid this: int4 KV through the port's own patched attention path, with no FlashInfer dependency. On Ampere they are also the fastest tiers. The fp8 tiers pay the FlashInfer prefill cost at long context, while the int4 tiers hold full 262K windows and more concurrent streams.
 
-**The Swift pair** is a different checkpoint, not a different KV setup: the Swift W4A16 finetune (`liamwh/Swift-Qwen3.8-27B-W4A16-syv-fast`, ~15 GB), with its own 25,879-row draft head and int8 embeddings, on the same fp8-KV setup as mtp/nomtp plus the draft-vocab and embed-quant bundles. Download it into the weights folder yourself; the installer doesn't fetch it. The Swift tiers have no `.env` file yet, so they run on the yml defaults (cards `0,1`, bind `0.0.0.0`, the model's own `weights/` folder), and the checkpoint name is fixed in the yml.
+**The Swift pair (retired 09-29).** The `swift-mtp` / `swift-nomtp` tiers — the Swift W4A16 finetune (`liamwh/Swift-Qwen3.8-27B-W4A16-syv-fast`, ~15 GB, own 25,879-row draft head and int8 embeddings) — are out of the package. Their decode record stays valid and is worth keeping in mind: swift-mtp was the only tier measured with no depth cliff (TPOT flat 22–27 ms from 4k to 210k). The tier files live in git history; restoring them is a checkout away. The wizard's checkpoint pick (step 2b) covers pulling a different target checkpoint instead.
+
+**The checkpoint pick.** The installer wizard asks which target checkpoint the tiers load (`TARGET_MODEL`, step 2b in `install.sh`/`install.bat`): the shipped default (Frozenlock AutoRound INT4), a Hugging Face repo id (fetched on demand by `vllm/package/weights-source.sh`), or an already-provisioned folder path. The pick applies to all six tiers - the fp8 and KVarN shapes share the checkpoint.
 
 ### KVarN tiers at long context
 

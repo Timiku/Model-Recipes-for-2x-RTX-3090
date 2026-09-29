@@ -108,7 +108,7 @@
 services:
   vllm-flashnext-2x3090:
     image: ${VLLM_IMAGE:-qwen38-flash-next-2x3090:locked}
-    container_name: qwen38-flashnext-v030stock-serve
+    container_name: qwen38-flashnext-stock-mtp-serve
     restart: "no"
     ipc: host
     ulimits:

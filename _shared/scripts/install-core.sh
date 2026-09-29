@@ -271,14 +271,6 @@ if [ $rc -ne 0 ]; then
   SLOTS=""
   folder_ok "$WEIGHTS/$TARGET" || SLOTS="$SLOTS target"
   if [ -n "$DRAFTER" ]; then folder_ok "$WEIGHTS/$DRAFTER" || SLOTS="$SLOTS drafter"; fi
-  # H7: the Swift tiers pin their own checkpoint (swift-*.env); if this model
-  # ships them, check that folder too so one install provisions everything.
-  for se in "$YDIR"/../swift-*.env; do
-    [ -f "$se" ] || continue
-    ST=$(sed -n 's/^TARGET_MODEL=//p' "$se" | head -n1)
-    [ -n "$ST" ] || continue
-    [ "$ST" = "$TARGET" ] || { folder_ok "$WEIGHTS/$ST" || SLOTS="$SLOTS swift($ST)"; }
-  done
   if [ -f "$YDIR/weights-source.sh" ]; then
     echo
     echo "      missing: $SLOTS — the model documents their source (vllm/package/"

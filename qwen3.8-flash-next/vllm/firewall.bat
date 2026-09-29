@@ -42,6 +42,20 @@ if defined FW_EXISTS (
     ) else (
         echo    [ok] 8116 - added
     )
+
+set "FW_EXISTS="
+for /f "delims=" %%O in ('netsh advfirewall firewall show rule name="model-recipes qwen3.8-flash-next 8119" 2^>nul ^| findstr /i "Rule Name:"') do set "FW_EXISTS=1"
+if defined FW_EXISTS (
+    echo    [ok] 8119 - the rule is already in place
+) else (
+    netsh advfirewall firewall add rule name="model-recipes qwen3.8-flash-next 8119" dir=in action=allow protocol=TCP localport=8119 profile=any >nul 2>nul
+    if errorlevel 1 (
+        set "FW_OK="
+        echo    [--] 8119 - the add was refused
+    ) else (
+        echo    [ok] 8119 - added
+    )
+)
 )
 echo.
 if not defined FW_OK (

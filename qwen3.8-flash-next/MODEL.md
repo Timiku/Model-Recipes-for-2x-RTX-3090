@@ -53,6 +53,8 @@ The container names carry no user-specific parts (`qwen38-flashnext-*`). The shi
 
 `WEIGHTS_DIR` is where the checkpoint lives. Blank means the model's own `weights/` folder in the repo. The installer downloads anything missing: 121 GiB, several hours. Set up swap first.
 
+**The checkpoint pick.** The installer wizard asks which target checkpoint the tiers load (`TARGET_MODEL`, step 2b in `install.sh`/`install.bat`): the shipped default (`qwen3.8-flash-next`, the albucino W4A16-FP8PLE community checkpoint), a Hugging Face repo id (fetched on demand by `vllm/package/weights-source.sh`), or an already-provisioned folder path. The pick applies to all three tiers — `mtp`, `nomtp`, and `stock-mtp`, the Stage-2 Step-1 mainline arm on the stock vLLM image (port 8119).
+
 ## Settings
 
 In the tier's `.env`.

@@ -34,6 +34,8 @@ Set in the tier's `.env`:
 
 For `TARGET_MODEL` and `DRAFTER_MODEL`, a bare name is a folder under `WEIGHTS_DIR`; a value containing `/` is a Hugging Face repo ID or an absolute container path, used as-is.
 
+**The checkpoint pick.** The installer wizard asks which target checkpoint the tiers load (`TARGET_MODEL`, step 2b in `install.sh`/`install.bat`): the shipped default (cyankiwi QAT-AWQ-INT4), a Hugging Face repo id (fetched on demand by `vllm/package/weights-source.sh`), or an already-provisioned folder path. The pick applies to both tiers.
+
 ## Settings
 
 - `TEMP` / `TOP_P` / `TOP_K` / `MIN_P` / `REPEAT_PENALTY`: the model card's standard sampler values (1.0 / 0.95 / 64 / 0.0 / 1.0), filled in in both files.

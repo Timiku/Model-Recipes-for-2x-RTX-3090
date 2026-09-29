@@ -9,7 +9,7 @@ set -u
 MODEL=qwen3.8-27b
 VDIR=$REPO/$MODEL/vllm
 MCFG="$REPO/_shared/scripts/mcfg.sh"
-TIERS="mtp nomtp superfast swift-mtp swift-nomtp kvarntier kvarndflash2 kvarnmtp"
+TIERS="mtp nomtp superfast kvarntier kvarndflash2 kvarnmtp"
 
 echo ============================================================
 echo " model-recipes install: $MODEL (native Linux)"
@@ -58,17 +58,17 @@ echo "  [ok] prereqs"
 echo
 echo " device pair - the two cards every tier runs on (tensor-parallel-2"
 echo " needs both). Standing pair:"
-PAIR_STAND=$(bash "$MCFG" get "$VDIR/mtp.env" DEVICE_PAIR 2>/dev/null || true)
+PAIR_STAND=$(bash "$MCFG" get "$VDIR/mtp.local.env" DEVICE_PAIR 2>/dev/null || bash "$MCFG" get "$VDIR/mtp.env" DEVICE_PAIR 2>/dev/null || true)
 if [ -n "$PAIR_STAND" ]; then echo "  $PAIR_STAND  (a re-run keeps it unless you change it)"; else echo "  none set yet - the package default is 0,1"; fi
 PICK=$(bash "$REPO/_shared/scripts/pickpair.sh" | tail -n1) || true
 if [ -n "${PICK:-}" ] && [ "$PICK" != "PAIR_KEEP=1" ]; then
   PAIR=${PICK#PAIR=}
   ok=1
-  for t in mtp nomtp superfast swift-mtp swift-nomtp kvarntier kvarndflash2 kvarnmtp; do bash "$MCFG" set "$VDIR/$t.env" DEVICE_PAIR "$PAIR" || ok=0; done
+  for t in mtp nomtp superfast kvarntier kvarndflash2 kvarnmtp; do bash "$MCFG" set "$VDIR/$t.local.env" DEVICE_PAIR "$PAIR" || ok=0; done
   if [ "$ok" = 1 ]; then
-    echo "  written DEVICE_PAIR=$PAIR to all tier machine .envs"
+    echo "  written DEVICE_PAIR=$PAIR to all tier machine .local.envs"
   else
-    echo "  WARNING: some tier .env writes failed - check DEVICE_PAIR in each $VDIR/<tier>.env" >&2
+    echo "  WARNING: some tier .local.env writes failed - check DEVICE_PAIR in each $VDIR/<tier>.local.env" >&2
   fi
 fi
 
@@ -89,7 +89,7 @@ case "$SB" in
   *) SB_VAL="" ;;
 esac
 if [ -n "$SB_VAL" ]; then
-  for t in mtp nomtp superfast swift-mtp swift-nomtp kvarntier kvarndflash2 kvarnmtp; do bash "$MCFG" set "$VDIR/$t.env" BIND_HOST "$SB_VAL"; done
+  for t in mtp nomtp superfast kvarntier kvarndflash2 kvarnmtp; do bash "$MCFG" set "$VDIR/$t.env" BIND_HOST "$SB_VAL"; done
   echo "  written BIND_HOST=$SB_VAL to all tier machine .envs"
 fi
 
@@ -118,8 +118,40 @@ if [ "${WD:0:1}" = "c" ] || [ "${WD:0:1}" = "C" ]; then
   printf '  path (a Linux path, e.g. /home/<user>/models): '
   IFS= read -r WDPATH || WDPATH=""
   if [ -n "$WDPATH" ]; then
-    for t in mtp nomtp superfast swift-mtp swift-nomtp kvarntier kvarndflash2 kvarnmtp; do bash "$MCFG" set "$VDIR/$t.env" WEIGHTS_DIR "$WDPATH"; done
+    for t in mtp nomtp superfast kvarntier kvarndflash2 kvarnmtp; do bash "$MCFG" set "$VDIR/$t.env" WEIGHTS_DIR "$WDPATH"; done
     echo "  written WEIGHTS_DIR=$WDPATH to all tier machine .envs"
+  fi
+fi
+
+# The checkpoint pick (step 2b): which target checkpoint the tiers load.
+# TARGET_MODEL is tracked tier-env truth; the same value goes to every tier
+# env. A bare name is a folder under WEIGHTS_DIR; a value containing / is an
+# HF repo id (fetched on demand by package/weights-source.sh) or an absolute
+# container path, used verbatim.
+TM_STAND=$(bash "$MCFG" get "$VDIR/mtp.env" TARGET_MODEL 2>/dev/null || true)
+echo
+echo  checkpoint pick - the target checkpoint the tiers load:
+echo "   1  qwen3.8-27b-autoround-int4   Frozenlock AutoRound INT4, ~18 GiB - the shipped default, the working built-in MTP head"
+echo "   h  a Hugging Face repo id       typed; fetched on demand (gated repos want HF_TOKEN exported)"
+echo "   p  a provisioned folder         an absolute path, used verbatim"
+if [ -n "$TM_STAND" ]; then echo "  standing pick: $TM_STAND  (a re-run keeps it unless you change it)"; fi
+printf '  [enter] keep   [1] default   [h] hf repo id   [p] path: '
+IFS= read -r CP || CP=""
+TM_VAL=""
+case "$CP" in
+  1) TM_VAL="qwen3.8-27b-autoround-int4" ;;
+  h|H) printf '  repo id (e.g. Frozenlock/Qwen3.8-27B-int4-AutoRound): '; IFS= read -r RID || RID="";
+       [ -n "$RID" ] && TM_VAL=$RID ;;
+  p|P) printf '  folder path (container-visible): '; IFS= read -r PP || PP="";
+       [ -n "$PP" ] && TM_VAL=$PP ;;
+esac
+if [ -n "$TM_VAL" ]; then
+  ok=1
+  for t in mtp nomtp superfast kvarntier kvarndflash2 kvarnmtp; do bash "$MCFG" set "$VDIR/$t.env" TARGET_MODEL "$TM_VAL" || ok=0; done
+  if [ "$ok" = 1 ]; then
+    echo "  written TARGET_MODEL=$TM_VAL to all tier .envs"
+  else
+    echo "  WARNING: some tier .env writes failed - check TARGET_MODEL in each $VDIR/<tier>.env" >&2
   fi
 fi
 

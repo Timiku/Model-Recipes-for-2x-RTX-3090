@@ -191,6 +191,40 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0gemma-dual.en
 powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0gemma-dual-nomtp.env" WEIGHTS_DIR "!WD_VAL!" >nul
 echo   written WEIGHTS_DIR=!WD_VAL! to both tier machine .envs
 :wd-done
+rem ---- the checkpoint pick (step 2b): the target checkpoint the tiers load ----
+rem ---- TARGET_MODEL is tracked tier-env truth; the same value goes to     ----
+rem ---- every tier env. A bare name is a folder under WEIGHTS_DIR; a      ----
+rem ---- value containing / is an HF repo id - fetched on demand by        ----
+rem ---- package\weights-source.sh - or an absolute container path.        ----
+set "TM_STAND="
+for /f "delims=" %%A in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%MGET%" "%~dp0gemma-dual.env" TARGET_MODEL 2^>nul') do set "TM_STAND=%%A"
+set "TM_VAL="
+echo.
+echo  checkpoint pick - the target checkpoint the tiers load:
+echo   1  gemma-4-31b-qat-awq-int4   cyankiwi QAT AWQ INT4, ~18 GiB - the shipped default,
+echo                                 the checkpoint that boots where the AutoRound class raises
+echo   h  a Hugging Face repo id       typed; fetched on demand - gated repos want HF_TOKEN exported
+echo   p  a provisioned folder         an absolute path, used verbatim
+if defined TM_STAND echo   standing pick: %TM_STAND%  ^(a re-run keeps it unless you change it^)
+set /p CP="  [enter] keep   [1] default   [h] hf repo id   [p] path: "
+if /i "!CP!"=="1" set "TM_VAL=gemma-4-31b-qat-awq-int4"
+if /i "!CP!"=="h" goto :cp-hf
+if /i "!CP!"=="p" goto :cp-path
+goto :cp-done
+:cp-hf
+set /p RID="  repo id (e.g. cyankiwi/gemma-4-31B-it-AWQ-4bit): "
+if defined RID set "TM_VAL=!RID!"
+goto :cp-done
+:cp-path
+set /p PP="  folder path (container-visible, e.g. /mnt/d/models/gemma31b): "
+if defined PP set "TM_VAL=!PP!"
+goto :cp-done
+:cp-done
+if defined TM_VAL (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0gemma-dual.env" TARGET_MODEL "!TM_VAL!" >nul
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0gemma-dual-nomtp.env" TARGET_MODEL "!TM_VAL!" >nul
+    echo   written TARGET_MODEL=!TM_VAL! to both tier .envs
+)
 rem ---- stage 0: the WSL distro must exist (backstop) ----
 wsl -d %D% -- echo PING < nul >nul 2>nul
 if errorlevel 1 (
