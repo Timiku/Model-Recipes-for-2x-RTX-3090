@@ -1,0 +1,30 @@
+diff --git a/scripts/benchmark_serving.py b/scripts/benchmark_serving.py
+index b9f9ff1..1a41de7 100644
+--- a/scripts/benchmark_serving.py
++++ b/scripts/benchmark_serving.py
+@@ -109,8 +109,11 @@ def post_json(url: str, payload: dict[str, Any], timeout: float) -> dict[str, An
+ def tokenize(
+     base_url: str, model: str, timeout: float, source_text: str = SEED_TEXT
+ ) -> list[int]:
++    api_root = base_url.rstrip("/")
++    if api_root.endswith("/v1"):
++        api_root = api_root[: -len("/v1")]
+     value = post_json(
+-        endpoint(base_url, "/tokenize"),
++        endpoint(api_root, "/tokenize"),
+         {
+             "model": model,
+             "prompt": source_text,
+@@ -130,8 +133,11 @@ def tokenize(
+ 
+ 
+ def tokenize_chat(base_url: str, model: str, timeout: float, content: str) -> list[int]:
++    api_root = base_url.rstrip("/")
++    if api_root.endswith("/v1"):
++        api_root = api_root[: -len("/v1")]
+     value = post_json(
+-        endpoint(base_url, "/tokenize"),
++        endpoint(api_root, "/tokenize"),
+         {
+             "model": model,
+             "messages": [{"role": "user", "content": content}],

@@ -58,22 +58,25 @@ echo "  [ok] prereqs"
 echo
 echo " device pair - the two cards every tier runs on (tensor-parallel-2"
 echo " needs both). Standing pair:"
-PAIR_STAND=$(bash "$MCFG" get "$VDIR/mtp.env" DEVICE_PAIR 2>/dev/null || true)
+# machine keys go to <tier>.local.env (gitignored, box truth) - the tracked
+# .env keeps only shipping defaults; writing the tracked file re-creates the
+# t34 hazard class (a box value leaking into commits, or re-pinning hardware)
+PAIR_STAND=$(bash "$MCFG" get "$VDIR/mtp.local.env" DEVICE_PAIR 2>/dev/null || bash "$MCFG" get "$VDIR/mtp.env" DEVICE_PAIR 2>/dev/null || true)
 if [ -n "$PAIR_STAND" ]; then echo "  $PAIR_STAND  (a re-run keeps it unless you change it)"; else echo "  none set yet - the package default is 0,1"; fi
 PICK=$(bash "$REPO/_shared/scripts/pickpair.sh" | tail -n1) || true
 if [ -n "${PICK:-}" ] && [ "$PICK" != "PAIR_KEEP=1" ]; then
   PAIR=${PICK#PAIR=}
   ok=1
-  for t in mtp nomtp; do bash "$MCFG" set "$VDIR/$t.env" DEVICE_PAIR "$PAIR" || ok=0; done
+  for t in mtp nomtp; do bash "$MCFG" set "$VDIR/$t.local.env" DEVICE_PAIR "$PAIR" || ok=0; done
   if [ "$ok" = 1 ]; then
-    echo "  written DEVICE_PAIR=$PAIR to all tier machine .envs"
+    echo "  written DEVICE_PAIR=$PAIR to all tier machine .local.envs"
   else
-    echo "  WARNING: some tier .env writes failed - check DEVICE_PAIR in each $VDIR/<tier>.env" >&2
+    echo "  WARNING: some tier .local.env writes failed - check DEVICE_PAIR in each $VDIR/<tier>.local.env" >&2
   fi
 fi
 
 # The serve bind.
-BIND_STAND=$(bash "$MCFG" get "$VDIR/mtp.env" BIND_HOST 2>/dev/null || true)
+BIND_STAND=$(bash "$MCFG" get "$VDIR/mtp.local.env" BIND_HOST 2>/dev/null || bash "$MCFG" get "$VDIR/mtp.env" BIND_HOST 2>/dev/null || true)
 echo
 echo  serve bind - the address the tier binds to when it is up:
 echo "   0.0.0.0    every interface (the package default; the LAN reaches it)"
@@ -89,8 +92,8 @@ case "$SB" in
   *) SB_VAL="" ;;
 esac
 if [ -n "$SB_VAL" ]; then
-  for t in mtp nomtp; do bash "$MCFG" set "$VDIR/$t.env" BIND_HOST "$SB_VAL"; done
-  echo "  written BIND_HOST=$SB_VAL to all tier machine .envs"
+  for t in mtp nomtp; do bash "$MCFG" set "$VDIR/$t.local.env" BIND_HOST "$SB_VAL"; done
+  echo "  written BIND_HOST=$SB_VAL to all tier machine .local.envs"
 fi
 
 # The firewall note (the bat's firewall.bat step; one manual line here).
@@ -108,7 +111,7 @@ else
 fi
 
 # The weights path.
-WD_STAND=$(bash "$MCFG" get "$VDIR/mtp.env" WEIGHTS_DIR 2>/dev/null || true)
+WD_STAND=$(bash "$MCFG" get "$VDIR/mtp.local.env" WEIGHTS_DIR 2>/dev/null || bash "$MCFG" get "$VDIR/mtp.env" WEIGHTS_DIR 2>/dev/null || true)
 echo
 echo  weights download path - install-core verifies the weight folders here
 if [ -n "$WD_STAND" ]; then echo "  standing path: $WD_STAND  (a re-run keeps it unless you change it)"; else echo "  no path set yet - stage 4 falls back to the model's own weights folder"; fi
@@ -118,8 +121,8 @@ if [ "${WD:0:1}" = "c" ] || [ "${WD:0:1}" = "C" ]; then
   printf '  path (a Linux path, e.g. /home/<user>/models): '
   IFS= read -r WDPATH || WDPATH=""
   if [ -n "$WDPATH" ]; then
-    for t in mtp nomtp; do bash "$MCFG" set "$VDIR/$t.env" WEIGHTS_DIR "$WDPATH"; done
-    echo "  written WEIGHTS_DIR=$WDPATH to all tier machine .envs"
+    for t in mtp nomtp; do bash "$MCFG" set "$VDIR/$t.local.env" WEIGHTS_DIR "$WDPATH"; done
+    echo "  written WEIGHTS_DIR=$WDPATH to all tier machine .local.envs"
   fi
 fi
 

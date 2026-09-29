@@ -4,12 +4,14 @@ Notes for agents working in this tree. One folder per model, one subfolder per s
 
 ## Where config lives
 
-The repo tree is the only source of config. Each tier is two files, both read in place at boot:
+The repo tree is the only source of config. Each tier is two tracked files, both read in place at boot:
 
 - `vllm/package/<tier>.yml`: the compose file, holding every default as `${VAR:-default}`.
-- `vllm/<tier>.env`: this machine's overrides, plain Docker compose `.env` format, next to the start scripts.
+- `vllm/<tier>.env`: the shipping defaults, plain Docker compose `.env` format, next to the start scripts.
 
-`up.sh` sources the `.env` into its shell and also passes it to compose (`--env-file <tier>.env -f package/<tier>.yml`), so the shell and compose always see the same values. There is no mirror and no sync step.
+Plus one untracked layer: `vllm/<tier>.local.env` (gitignored) holds a box's machine truth - `DEVICE_PAIR`, `BIND_HOST`, `WEIGHTS_DIR`, per-box tuning. Local wins: every reader (`up.sh`, `down.sh`, `serve.sh`'s arm probe) goes through `_shared/scripts/tierenv.sh`, which emits `<tier>.env` then `<tier>.local.env`; later files win in both the shell source and the compose `--env-file` order. A shipping-default change to the tracked `.env` therefore cannot re-pin a box's hardware (the t34 lesson: cebb30d re-pinned the dev rig onto its display card through exactly this hole before the layer existed). The installer writes machine keys to the `.local.env`, never to the tracked file.
+
+`up.sh` sources both files into its shell and passes both to compose (`--env-file <tier>.env --env-file <tier>.local.env -f package/<tier>.yml`), so the shell and compose always see the same values, in the same precedence order. There is no mirror and no sync step.
 
 On Windows the tree sits on the Windows side and the WSL distro holds only runtime state, in `~/model-recipes-rt/<model>/`: the JIT cache, the boot log (`boot-failure.log`), the last boot's result (`boot-last-status`) and a memory trace (`commit-trace`). Native Linux uses the same folder under `$HOME`.
 
@@ -19,14 +21,15 @@ On Windows the tree sits on the Windows side and the WSL distro holds only runti
 |---|---|
 | `<model>/MODEL.md` | The model card: tiers, ports, settings, measured numbers. |
 | `<model>/vllm/package/<tier>.yml` | Compose file per tier. A provenance header lists its local changes; the provenance gate diffs the rest against `baseline/`. |
-| `<model>/vllm/<tier>.env` | Machine settings per tier. The installer writes `DEVICE_PAIR`, `BIND_HOST` and `WEIGHTS_DIR`; a reinstall never resets the file. Not covered by the provenance gate. |
+| `<model>/vllm/<tier>.env` | Shipping defaults per tier. Tracked. Not covered by the provenance gate. |
+| `<model>/vllm/<tier>.local.env` | Box machine truth (gitignored): the installer writes `DEVICE_PAIR`, `BIND_HOST` and `WEIGHTS_DIR` here; overrides the tracked `.env` key-by-key. Created on demand; never committed. |
 | `<model>/vllm/*.bat`, `*.sh` | Entry scripts: `install`, `start-<tier>`, `stop`, `uninstall`, `bench`, `bench-parallel`, and `firewall` (Windows only). |
 | `<model>/vllm/baseline/<tier>.yml` | The reference body the gate compares against: the pre-rebase body (v0.27.1 form for the 27B, v0.28.0 for Gemma; Flash-Next has its own upstream snapshot) with its `image:` line changed to v0.29.0. Several tiers share one baseline (e.g. the kvarn tiers diff against `nomtp.yml` or `superfast.yml`). |
 | `<model>/vllm/deltas/<tier>.txt` | The allowed differences between baseline and package yml. |
 | `<model>/vllm/vllm-patches/` | Patch bundles a yml's entrypoint applies at boot. Vendored verbatim, architecture-specific. |
 | `<model>/vllm/scripts/` | Boot-time helpers the ymls mount. |
 | `<model>/llamacpp/RECIPE.md` | A card for the llama.cpp path: launch arguments and measured results. No scripts. |
-| `_shared/scripts/` | Model-independent machinery. `up.sh` (boot), `down.sh` (stop), `serve.sh` (arm probe + `up.sh` + log tail), `verdict.sh` (prints the last boot result), `install-core.sh` (install stages), `uninstall-core.sh`, `uninstall-all-core.sh`, `mcfg-get.ps1` / `mcfg-set.ps1` / `mcfg.sh` (read and write `.env` keys), `pickpair.bat` / `pickpair.sh` (GPU picker), `model-recipes-watchdog.ps1`, `yml-provenance.py` (the gate). |
+| `_shared/scripts/` | Model-independent machinery. `up.sh` (boot), `down.sh` (stop), `serve.sh` (arm probe + `up.sh` + log tail), `verdict.sh` (prints the last boot result), `install-core.sh` (install stages), `uninstall-core.sh`, `uninstall-all-core.sh`, `mcfg-get.ps1` / `mcfg-set.ps1` / `mcfg.sh` (read and write `.env` keys), `tierenv.sh` (the tier config precedence rule), `pickpair.bat` / `pickpair.sh` (GPU picker), `model-recipes-watchdog.ps1`, `yml-provenance.py` (the gate). |
 | `_shared/scripts/gen-linux-entries.sh` | Generates every model's Linux entry scripts. The committed `.sh` files have since been hand-edited and no longer match the generator exactly: fix the generator and regenerate, don't patch outputs by hand. |
 | `_shared/patches/vllm-kvarn-0290/` | The KVarN int4-KV bundle shared by the kvarn tiers. |
 

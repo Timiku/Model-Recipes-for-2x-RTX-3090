@@ -324,17 +324,17 @@ echo "  [ok] prereqs"
 echo
 echo  device pair - the two cards every tier runs on (tensor-parallel-2
 echo  needs both). Standing pair:
-PAIR_STAND=\$(bash "\$MCFG" get "\$VDIR/${tiers%% *}.env" DEVICE_PAIR 2>/dev/null || true)
+PAIR_STAND=\$(bash "\$MCFG" get "\$VDIR/${tiers%% *}.local.env" DEVICE_PAIR 2>/dev/null || bash "\$MCFG" get "\$VDIR/${tiers%% *}.env" DEVICE_PAIR 2>/dev/null || true)
 if [ -n "\$PAIR_STAND" ]; then echo "  \$PAIR_STAND  (a re-run keeps it unless you change it)"; else echo "  none set yet - the package default is 0,1"; fi
 PICK=\$(bash "\$REPO/_shared/scripts/pickpair.sh" | tail -n1) || true
 if [ -n "\${PICK:-}" ] && [ "\$PICK" != "PAIR_KEEP=1" ]; then
   PAIR=\${PICK#PAIR=}
   ok=1
-  for t in $tiers; do bash "\$MCFG" set "\$VDIR/\$t.env" DEVICE_PAIR "\$PAIR" || ok=0; done
+  for t in $tiers; do bash "\$MCFG" set "\$VDIR/\$t.local.env" DEVICE_PAIR "\$PAIR" || ok=0; done
   if [ "\$ok" = 1 ]; then
-    echo "  written DEVICE_PAIR=\$PAIR to all tier machine .envs"
+    echo "  written DEVICE_PAIR=\$PAIR to all tier machine .local.envs"
   else
-    echo "  WARNING: some tier .env writes failed - check DEVICE_PAIR in each \$VDIR/<tier>.env" >&2
+    echo "  WARNING: some tier .local.env writes failed - check DEVICE_PAIR in each \$VDIR/<tier>.local.env" >&2
   fi
 fi
 

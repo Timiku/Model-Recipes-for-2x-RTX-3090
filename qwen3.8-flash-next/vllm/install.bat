@@ -10,7 +10,7 @@ set "D=Ubuntu"
 if defined WSL_DISTRO set "D=%WSL_DISTRO%"
 set "MODEL=qwen3.8-flash-next"
 rem The two tier machine .envs this model's wizard keeps in step (two-tier
-rem config: the box's DEVICE_PAIR / BIND_HOST / WEIGHTS_DIR live here, beside the
+rem config: the box's DEVICE_PAIR / BIND_HOST / WEIGHTS_DIR live in the tier .local.env files (gitignored), beside the
 rem bats; the package templates in vllm\package\ are applied silently at boot).
 set "MCFG=%REPO%\_shared\scripts\mcfg-set.ps1"
 set "MGET=%REPO%\_shared\scripts\mcfg-get.ps1"
@@ -91,7 +91,9 @@ goto :stages
 :stages
 rem ---- the device pair: the tickbox-style picker (pick two cards) ----
 set "PAIR_STAND="
-for /f "delims=" %%A in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%MGET%" "%~dp0mtp.env" DEVICE_PAIR 2^>nul') do set "PAIR_STAND=%%A"
+rem machine keys live in the gitignored .local.env (box truth); the tracked .env is shipping defaults only
+for /f "delims=" %%A in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%MGET%" "%~dp0mtp.local.env" DEVICE_PAIR 2^>nul') do set "PAIR_STAND=%%A"
+if not defined PAIR_STAND for /f "delims=" %%A in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%MGET%" "%~dp0mtp.env" DEVICE_PAIR 2^>nul') do set "PAIR_STAND=%%A"
 echo.
 echo  device pair - the two cards every tier runs on - tensor-parallel-2
 echo  needs both, so the picker takes exactly two picks. Standing pair:
@@ -107,13 +109,14 @@ if defined PAIR goto :dev-write
 if not defined PAIR_KEEP echo   GPU pair unchanged
 goto :dev-done
 :dev-write
-for %%T in (mtp nomtp) do powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0%%T.env" DEVICE_PAIR "!PAIR!" >nul
-echo   written DEVICE_PAIR=!PAIR! to both tier machine .envs
+for %%T in (mtp nomtp) do powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0%%T.local.env" DEVICE_PAIR "!PAIR!" >nul
+echo   written DEVICE_PAIR=!PAIR! to both tier machine .local.envs
 goto :dev-done
 :dev-done
 rem ---- the serve bind: the raw address the tier binds to ----
 set "BIND_STAND="
-for /f "delims=" %%A in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%MGET%" "%~dp0mtp.env" BIND_HOST 2^>nul') do set "BIND_STAND=%%A"
+for /f "delims=" %%A in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%MGET%" "%~dp0mtp.local.env" BIND_HOST 2^>nul') do set "BIND_STAND=%%A"
+if not defined BIND_STAND for /f "delims=" %%A in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%MGET%" "%~dp0mtp.env" BIND_HOST 2^>nul') do set "BIND_STAND=%%A"
 set "SB_VAL="
 echo.
 echo  serve bind - the raw address the tier binds to when it is up:
@@ -141,9 +144,9 @@ if defined ADDR (
 echo   no address given - the standing bind is kept; nothing was written
 goto :bind-done
 :bind-write
-powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0mtp.env" BIND_HOST "!SB_VAL!" >nul
-powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0nomtp.env" BIND_HOST "!SB_VAL!" >nul
-echo   written BIND_HOST=!SB_VAL! to both tier machine .envs
+powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0mtp.local.env" BIND_HOST "!SB_VAL!" >nul
+powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0nomtp.local.env" BIND_HOST "!SB_VAL!" >nul
+echo   written BIND_HOST=!SB_VAL! to both tier machine .local.envs
 :bind-done
 rem ---- the firewall: the inbound rules for the tier ports live in     ----
 rem ---- firewall.bat in this folder - the one step that needs admin    ----
@@ -155,7 +158,8 @@ echo  The tier boots either way - until the rules are in, the LAN simply
 echo  cannot reach it.
 rem ---- the weights path: where stage 4 verifies + fetches missing folders ----
 set "WD_STAND="
-for /f "delims=" %%A in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%MGET%" "%~dp0mtp.env" WEIGHTS_DIR 2^>nul') do set "WD_STAND=%%A"
+for /f "delims=" %%A in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%MGET%" "%~dp0mtp.local.env" WEIGHTS_DIR 2^>nul') do set "WD_STAND=%%A"
+if not defined WD_STAND for /f "delims=" %%A in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%MGET%" "%~dp0mtp.env" WEIGHTS_DIR 2^>nul') do set "WD_STAND=%%A"
 set "WD_VAL="
 echo.
 echo  weights download path - stage 4 verifies the weight folders here and,
@@ -178,8 +182,8 @@ if defined WDPATH (
 echo   no path given - the standing path is kept; nothing was written
 goto :wd-done
 :wd-write
-powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0mtp.env" WEIGHTS_DIR "!WD_VAL!" >nul
-powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0nomtp.env" WEIGHTS_DIR "!WD_VAL!" >nul
+powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0mtp.local.env" WEIGHTS_DIR "!WD_VAL!" >nul
+powershell -NoProfile -ExecutionPolicy Bypass -File "%MCFG%" "%~dp0nomtp.local.env" WEIGHTS_DIR "!WD_VAL!" >nul
 echo   written WEIGHTS_DIR=!WD_VAL! to both tier machine .envs
 :wd-done
 rem ---- stage 0: the WSL distro must exist (backstop) ----

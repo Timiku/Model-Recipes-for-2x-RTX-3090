@@ -62,14 +62,17 @@
 # ===[model-recipes:provenance:end]===
 # Invariants (carried from the source): --ipc host; --cap-add SYS_PTRACE;
 #   the memlock -1 / stack 67108864 ulimits; -p 127.0.0.1:PORT:PORT;
-#   the 19-name env pass-through list (PORT, VLLM_QSA_EXACT_TOPK,
+#   the 26-name env pass-through list (the original 19: PORT, VLLM_QSA_EXACT_TOPK,
 #   SERVED_MODEL_NAME, MAX_MODEL_LEN, MAX_NUM_BATCHED_TOKENS,
 #   MAX_PARALLEL_LOADING_WORKERS, MAX_NUM_SEQS, KV_CACHE_MEMORY_BYTES,
 #   KV_CACHE_DTYPE, CPU_OFFLOAD_GB, VLLM_PLE_OFFLOAD_READY_TIMEOUT,
 #   VLLM_PLE_DISK_OFFLOAD_DIR,
 #   VLLM_WNA16_STATIC_HOT_CACHE_SIZE, VLLM_WNA16_STATIC_HOT_CACHE_MAX_TOKENS,
 #   VLLM_PREFIX_CACHE_RETENTION_INTERVAL, MTP_DEPTH, ENABLE_VISION,
-#   VISION_MAX_IMAGES, VISION_MAX_PIXELS); the /model mount
+#   VISION_MAX_IMAGES, VISION_MAX_PIXELS; plus the 7 fast-256k names appended 09-28:
+#   QWEN38_STREAM_STAGE, QWEN38_STREAM_STAGE_MIN_TOKENS, QWEN38_STAGE_OVERLAP,
+#   QWEN38_ASYNC_SCHEDULING, QWEN38_TRITON_SKINNY, QWEN38_PLE_PREFAULT,
+#   DISABLE_CUSTOM_ALL_REDUCE); the /model mount
 #   point, the /ple-table bind (delta 13), and the single-argument
 #   `/model` command
 # Re-assert (the update-flow rule):

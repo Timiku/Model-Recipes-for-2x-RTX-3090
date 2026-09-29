@@ -178,6 +178,27 @@ if [ -n "$NSMI_LIST" ]; then
   fi
 fi
 
+# The display-card gate (t34): a pinned card driving a display holds DWM
+# memory and WDDM oversubscribes instead of OOMing - the rank stalls
+# mid-step. Refuse unless ALLOW_DISPLAY_CARD=1 (for single-card display
+# rigs that legitimately serve). nvidia-smi enumerates in PCI bus order by
+# default, which matches the ymls' CUDA_DEVICE_ORDER=PCI_BUS_ID; the env
+# var itself does not affect nvidia-smi's ordering, the default does.
+if [ -n "$CARDS" ] && [ "${ALLOW_DISPLAY_CARD:-0}" != "1" ]; then
+  if DISP=$(nvidia-smi --id="$CARDS" --query-gpu=index,display_active --format=csv,noheader 2>/dev/null); then
+    DISP_BAD=$(grep -i "Enabled" <<< "$DISP" | cut -d, -f1 | tr -d ' ' | paste -sd,)
+    if [ -n "$DISP_BAD" ]; then
+      echo "[up] FATAL: DISPLAY-CARD - pinned card(s) [$DISP_BAD] drive a display."
+      echo "[up] A display card in the tensor-parallel pair stalls the tier under VRAM pressure"
+      echo "[up] (the t34 hang class). Fix: point DEVICE_PAIR at headless cards, or set"
+      echo "[up] ALLOW_DISPLAY_CARD=1 in the tier's .local.env to override."
+      { echo "[up] $(date -u '+%F %T') FATAL: DISPLAY-CARD ($DISP_BAD in pair $CARDS)"; } >> "$ROOT/boot-failure.log" 2>/dev/null || true
+      printf 'RUN=%s\nVERDICT=DISPLAY-CARD\n' "$(date -u '+%F %T')" > "$ROOT/boot-last-status" 2>/dev/null || true
+      exit 1
+    fi
+  fi
+fi
+
 if [ -n "$CARDS" ]; then
   IFS=',' read -ra CARD_ARR <<< "$CARDS"
   # The gate reads nvidia-smi itself, pinned to this tier's cards: every
