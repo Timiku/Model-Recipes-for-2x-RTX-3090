@@ -204,3 +204,11 @@ services:
       - --enable-prefix-caching
       - --mamba-cache-mode
       - align
+      # the wrapper-equivalent flags carried per the Stage-2 check-back
+      # (Claude, 09-29): faithful plain-flags port of the vendor wrapper
+      - --language-model-only
+      - --compilation-config
+      - '{"mode":0,"cudagraph_mode":"FULL_DECODE_ONLY"}'
+      - --no-async-scheduling
+      - --enable-chunked-prefill
+      - --disable-custom-all-reduce
